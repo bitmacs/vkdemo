@@ -31,6 +31,8 @@ int main() {
         uint32_t image_index;
         acquire_next_image(&vk_context, &image_index);
 
+        vkResetDescriptorPool(vk_context.device, vk_context.descriptor_pools[vk_context.frame_index], 0);
+
         VkCommandBuffer command_buffer = vk_context.command_buffers[vk_context.frame_index];
         begin_command_buffer(&vk_context, command_buffer);
 

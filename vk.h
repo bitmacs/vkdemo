@@ -26,6 +26,7 @@ struct VkContext {
     std::vector<VkSemaphore> render_complete_semaphores;
     VkRenderPass render_pass;
     std::vector<VkFramebuffer> framebuffers;
+    std::vector<VkDescriptorPool> descriptor_pools;
     uint32_t frame_index;
 };
 

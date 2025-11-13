@@ -340,6 +340,27 @@ static void create_framebuffers(VkContext *context, uint32_t width, uint32_t hei
     }
 }
 
+static void create_descriptor_pools(VkContext *context) {
+    context->descriptor_pools.resize(MAX_FRAMES_IN_FLIGHT);
+
+    VkDescriptorPoolSize descriptor_pool_sizes[] = {
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+    };
+
+    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
+    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptor_pool_create_info.maxSets = 1;
+    descriptor_pool_create_info.poolSizeCount = std::size(descriptor_pool_sizes);
+    descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes;
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkResult result = vkCreateDescriptorPool(context->device, &descriptor_pool_create_info, nullptr,
+                                                 &context->descriptor_pools[i]);
+        assert(result == VK_SUCCESS);
+    }
+}
+
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
     create_instance(context);
     create_surface(context, window);
@@ -352,10 +373,15 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_semaphores(context);
     create_render_pass(context);
     create_framebuffers(context, width, height);
+    create_descriptor_pools(context);
     context->frame_index = 0;
 }
 
 void cleanup_vk(VkContext *context) {
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        vkDestroyDescriptorPool(context->device, context->descriptor_pools[i], nullptr);
+    }
+    context->descriptor_pools.clear();
     for (size_t i = 0; i < context->framebuffers.size(); ++i) {
         vkDestroyFramebuffer(context->device, context->framebuffers[i], nullptr);
     }
