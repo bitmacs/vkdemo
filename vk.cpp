@@ -361,6 +361,20 @@ static void create_descriptor_pools(VkContext *context) {
     }
 }
 
+static void create_descriptor_set_layout(VkContext *context) {
+    VkDescriptorSetLayoutBinding descriptor_set_layout_bindings[] = {
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, nullptr},
+    };
+
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {};
+    descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptor_set_layout_create_info.bindingCount = std::size(descriptor_set_layout_bindings);
+    descriptor_set_layout_create_info.pBindings = descriptor_set_layout_bindings;
+    VkResult result = vkCreateDescriptorSetLayout(context->device, &descriptor_set_layout_create_info, nullptr,
+                                                  &context->descriptor_set_layout);
+    assert(result == VK_SUCCESS);
+}
+
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
     create_instance(context);
     create_surface(context, window);
@@ -374,10 +388,12 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_render_pass(context);
     create_framebuffers(context, width, height);
     create_descriptor_pools(context);
+    create_descriptor_set_layout(context);
     context->frame_index = 0;
 }
 
 void cleanup_vk(VkContext *context) {
+    vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyDescriptorPool(context->device, context->descriptor_pools[i], nullptr);
     }
