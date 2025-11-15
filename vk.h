@@ -30,6 +30,7 @@ struct VkContext {
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
+    std::vector<VkDescriptorSet> descriptor_sets;
     uint32_t frame_index;
 };
 
@@ -54,3 +55,5 @@ void end_render_pass(VkContext *context, VkCommandBuffer command_buffer);
 void begin_command_buffer(VkContext *context, VkCommandBuffer command_buffer);
 
 void end_command_buffer(VkContext *context, VkCommandBuffer command_buffer);
+
+void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buffer);

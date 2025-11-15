@@ -352,6 +352,7 @@ static void create_descriptor_pools(VkContext *context) {
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     descriptor_pool_create_info.maxSets = 1;
     descriptor_pool_create_info.poolSizeCount = std::size(descriptor_pool_sizes);
     descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes;
@@ -416,9 +417,9 @@ static void create_pipeline(VkContext *context) {
 
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
     vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
+    vertex_input_state_create_info.vertexBindingDescriptionCount = 0;
     vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_input_binding_description;
-    vertex_input_state_create_info.vertexAttributeDescriptionCount = 1;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = 0;
     vertex_input_state_create_info.pVertexAttributeDescriptions = &vertex_input_attribute_description;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
@@ -508,6 +509,22 @@ static void create_pipeline(VkContext *context) {
     vkDestroyShaderModule(context->device, fragment_shader_module, nullptr);
 }
 
+static void allocate_descriptor_sets(VkContext *context) {
+    context->descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
+        descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptor_set_allocate_info.descriptorPool = context->descriptor_pools[i];
+        descriptor_set_allocate_info.descriptorSetCount = 1;
+        descriptor_set_allocate_info.pSetLayouts = &context->descriptor_set_layout;
+
+        VkResult result = vkAllocateDescriptorSets(context->device, &descriptor_set_allocate_info,
+                                                   &context->descriptor_sets[i]);
+        assert(result == VK_SUCCESS);
+    }
+}
+
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
     create_instance(context);
     create_surface(context, window);
@@ -524,10 +541,15 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_descriptor_set_layout(context);
     create_pipeline_layout(context);
     create_pipeline(context);
+    allocate_descriptor_sets(context);
     context->frame_index = 0;
 }
 
 void cleanup_vk(VkContext *context) {
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        vkFreeDescriptorSets(context->device, context->descriptor_pools[i], 1, &context->descriptor_sets[i]);
+    }
+    context->descriptor_sets.clear();
     vkDestroyPipeline(context->device, context->pipeline, nullptr);
     vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
@@ -635,4 +657,17 @@ void begin_command_buffer(VkContext *context, VkCommandBuffer command_buffer) {
 
 void end_command_buffer(VkContext *context, VkCommandBuffer command_buffer) {
     vkEndCommandBuffer(command_buffer);
+}
+
+void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buffer) {
+    VkBufferCreateInfo buffer_create_info{};
+    buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_create_info.size = size;
+    buffer_create_info.usage = usage;
+    buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    buffer_create_info.queueFamilyIndexCount = 1; // only one queue family will use this buffer
+    buffer_create_info.pQueueFamilyIndices = &context->queue_family_index;
+
+    VkResult result = vkCreateBuffer(context->device, &buffer_create_info, nullptr, buffer);
+    assert(result == VK_SUCCESS);
 }
