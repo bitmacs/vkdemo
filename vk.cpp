@@ -451,6 +451,7 @@ static void create_pipeline(VkContext *context) {
     VkPipelineViewportStateCreateInfo viewport_state_create_info = {};
     viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewport_state_create_info.viewportCount = 1;
+    viewport_state_create_info.scissorCount = 1;
 
     VkPipelineMultisampleStateCreateInfo multisample_state_create_info = {};
     multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -462,12 +463,23 @@ static void create_pipeline(VkContext *context) {
     create_shader_module(context, "triangle.frag.spv", &fragment_shader_module);
 
     VkPipelineShaderStageCreateInfo shader_stage_create_infos[] = {
-        {.stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vertex_shader_module, .pName = "main"},
-        {.stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fragment_shader_module, .pName = "main"},
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertex_shader_module,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragment_shader_module,
+            .pName = "main",
+        },
     };
 
     std::vector<VkDynamicState> dynamic_states = {};
     dynamic_states.emplace_back(VK_DYNAMIC_STATE_VIEWPORT);
+    dynamic_states.emplace_back(VK_DYNAMIC_STATE_SCISSOR);
 
     VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
     dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -491,6 +503,9 @@ static void create_pipeline(VkContext *context) {
     VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr,
                                                 &context->pipeline);
     assert(result == VK_SUCCESS);
+
+    vkDestroyShaderModule(context->device, vertex_shader_module, nullptr);
+    vkDestroyShaderModule(context->device, fragment_shader_module, nullptr);
 }
 
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
