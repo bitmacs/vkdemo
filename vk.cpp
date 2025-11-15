@@ -1,6 +1,8 @@
 #include "vk.h"
+#include "file.h"
 #include <cassert>
 #include <iostream>
+#include <glm/vec3.hpp>
 
 #define LOAD_INSTANCE_PROC_ADDR(instance, name) (PFN_ ## name) vkGetInstanceProcAddr(instance, #name);
 #define LOAD_DEVICE_PROC_ADDR(device, name) (PFN_ ## name) vkGetDeviceProcAddr(device, #name);
@@ -375,6 +377,122 @@ static void create_descriptor_set_layout(VkContext *context) {
     assert(result == VK_SUCCESS);
 }
 
+static void create_pipeline_layout(VkContext *context) {
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {};
+    pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeline_layout_create_info.setLayoutCount = 1;
+    pipeline_layout_create_info.pSetLayouts = &context->descriptor_set_layout;
+    VkResult result = vkCreatePipelineLayout(context->device, &pipeline_layout_create_info, nullptr,
+                                             &context->pipeline_layout);
+    assert(result == VK_SUCCESS);
+}
+
+static void create_shader_module(VkContext *context, const char *filepath, VkShaderModule *shader_module) {
+    const auto code = read_binary_file(filepath);
+
+    VkShaderModuleCreateInfo shader_module_create_info = {};
+    shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shader_module_create_info.codeSize = code.size();
+    shader_module_create_info.pCode = (const uint32_t *) code.data();
+    VkResult result = vkCreateShaderModule(context->device, &shader_module_create_info, nullptr, shader_module);
+    assert(result == VK_SUCCESS);
+}
+
+struct Vertex {
+    glm::vec3 position;
+};
+
+static void create_pipeline(VkContext *context) {
+    VkVertexInputBindingDescription vertex_input_binding_description = {};
+    vertex_input_binding_description.binding = 0;
+    vertex_input_binding_description.stride = sizeof(Vertex);
+    vertex_input_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription vertex_input_attribute_description = {};
+    vertex_input_attribute_description.binding = 0;
+    vertex_input_attribute_description.location = 0;
+    vertex_input_attribute_description.format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_input_attribute_description.offset = offsetof(Vertex, position);
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
+    vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
+    vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_input_binding_description;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = 1;
+    vertex_input_state_create_info.pVertexAttributeDescriptions = &vertex_input_attribute_description;
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
+    input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
+    rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterization_state_create_info.lineWidth = 1.0f;
+    rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineColorBlendAttachmentState color_blend_attachment_state = {};
+    color_blend_attachment_state.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    color_blend_attachment_state.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo color_blend_state_create_info = {};
+    color_blend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    color_blend_state_create_info.attachmentCount = 1;
+    color_blend_state_create_info.pAttachments = &color_blend_attachment_state;
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {};
+    depth_stencil_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depth_stencil_state_create_info.depthTestEnable = VK_TRUE;
+    depth_stencil_state_create_info.depthWriteEnable = VK_TRUE;
+    depth_stencil_state_create_info.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    VkPipelineViewportStateCreateInfo viewport_state_create_info = {};
+    viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_state_create_info.viewportCount = 1;
+
+    VkPipelineMultisampleStateCreateInfo multisample_state_create_info = {};
+    multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample_state_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkShaderModule vertex_shader_module = VK_NULL_HANDLE;
+    VkShaderModule fragment_shader_module = VK_NULL_HANDLE;
+    create_shader_module(context, "triangle.vert.spv", &vertex_shader_module);
+    create_shader_module(context, "triangle.frag.spv", &fragment_shader_module);
+
+    VkPipelineShaderStageCreateInfo shader_stage_create_infos[] = {
+        {.stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vertex_shader_module, .pName = "main"},
+        {.stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fragment_shader_module, .pName = "main"},
+    };
+
+    std::vector<VkDynamicState> dynamic_states = {};
+    dynamic_states.emplace_back(VK_DYNAMIC_STATE_VIEWPORT);
+
+    VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
+    dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_state_create_info.dynamicStateCount = dynamic_states.size();
+    dynamic_state_create_info.pDynamicStates = dynamic_states.data();
+
+    VkGraphicsPipelineCreateInfo pipeline_create_info = {};
+    pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeline_create_info.stageCount = std::size(shader_stage_create_infos);
+    pipeline_create_info.pStages = shader_stage_create_infos;
+    pipeline_create_info.pVertexInputState = &vertex_input_state_create_info;
+    pipeline_create_info.pInputAssemblyState = &input_assembly_state_create_info;
+    pipeline_create_info.pViewportState = &viewport_state_create_info;
+    pipeline_create_info.pRasterizationState = &rasterization_state_create_info;
+    pipeline_create_info.pMultisampleState = &multisample_state_create_info;
+    pipeline_create_info.pDepthStencilState = &depth_stencil_state_create_info;
+    pipeline_create_info.pColorBlendState = &color_blend_state_create_info;
+    pipeline_create_info.pDynamicState = &dynamic_state_create_info;
+    pipeline_create_info.layout = context->pipeline_layout;
+    pipeline_create_info.renderPass = context->render_pass;
+    VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr,
+                                                &context->pipeline);
+    assert(result == VK_SUCCESS);
+}
+
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
     create_instance(context);
     create_surface(context, window);
@@ -389,10 +507,14 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_framebuffers(context, width, height);
     create_descriptor_pools(context);
     create_descriptor_set_layout(context);
+    create_pipeline_layout(context);
+    create_pipeline(context);
     context->frame_index = 0;
 }
 
 void cleanup_vk(VkContext *context) {
+    vkDestroyPipeline(context->device, context->pipeline, nullptr);
+    vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyDescriptorPool(context->device, context->descriptor_pools[i], nullptr);

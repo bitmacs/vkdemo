@@ -28,6 +28,8 @@ struct VkContext {
     std::vector<VkFramebuffer> framebuffers;
     std::vector<VkDescriptorPool> descriptor_pools;
     VkDescriptorSetLayout descriptor_set_layout;
+    VkPipelineLayout pipeline_layout;
+    VkPipeline pipeline;
     uint32_t frame_index;
 };
 
