@@ -7,12 +7,30 @@
 struct VkDemo {
 };
 
+Camera camera = {};
+
 static void glfw_error_callback(int error, const char *description) {
     assert(false);
 }
 
 static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    glfwSetWindowShouldClose(window, GLFW_TRUE);
+    if (action == GLFW_RELEASE) {
+        if (key == GLFW_KEY_ESCAPE) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        } else if (key == GLFW_KEY_W) {
+            camera.position.z -= 1.0f;
+        } else if (key == GLFW_KEY_S) {
+            camera.position.z += 1.0f;
+        } else if (key == GLFW_KEY_A) {
+            camera.position.x -= 1.0f;
+        } else if (key == GLFW_KEY_D) {
+            camera.position.x += 1.0f;
+        } else if (key == GLFW_KEY_Q) {
+            camera.position.y += 1.0f;
+        } else if (key == GLFW_KEY_E) {
+            camera.position.y -= 1.0f;
+        }
+    }
 }
 
 struct CameraData {
@@ -32,10 +50,13 @@ int main() {
     VkContext vk_context;
     init_vk(&vk_context, window, width, height);
 
-    Camera camera = {
-        .position = glm::vec3(0.0f, 0.0f, 1.0f),
-        .rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
-    };
+    camera.position = glm::vec3(0.0f, 0.0f, 2.0f);
+    camera.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    camera.fov_y = glm::radians(45.0f);
+    camera.aspect_ratio = (float) width / (float) height;
+    camera.z_near = 0.1f;
+    camera.z_far = 100.0f;
+
     CameraData camera_data = {};
 
     std::vector<VkBuffer> camera_buffers = {};
@@ -116,6 +137,7 @@ int main() {
         vkUpdateDescriptorSets(vk_context.device, 1, &write_descriptor_set, 0, nullptr);
 
         const glm::mat4 view = compute_view_matrix(camera);
+        const glm::mat4 projection = compute_projection_matrix(camera);
 
         // vulkan clip space has inverted y and half z
         glm::mat4 clip = glm::mat4(
@@ -126,7 +148,7 @@ int main() {
         );
 
         camera_data.view = view;
-        camera_data.projection = clip * glm::mat4(1.0f);
+        camera_data.projection = clip * projection;
 
         void *ptr = nullptr;
         vkMapMemory(vk_context.device, camera_buffer_memories[vk_context.frame_index], 0, sizeof(CameraData), 0, &ptr);

@@ -1,4 +1,5 @@
 #include "camera.h"
+#include <glm/gtc/quaternion.hpp>
 
 glm::mat4 compute_view_matrix(const Camera &camera) {
     // 视图矩阵的数学原理：
@@ -17,4 +18,8 @@ glm::mat4 compute_view_matrix(const Camera &camera) {
     view_matrix[3] = glm::vec4(rotated_neg_position, 1.0f);
 
     return view_matrix;
+}
+
+glm::mat4 compute_projection_matrix(const Camera &camera) {
+    return glm::perspective(camera.fov_y, camera.aspect_ratio, camera.z_near, camera.z_far);
 }
