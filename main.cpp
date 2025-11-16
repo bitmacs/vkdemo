@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstring>
 #include <glm/glm.hpp>
+#include <glm/ext/quaternion_trigonometric.hpp>
 
 struct VkDemo {
 };
@@ -29,6 +30,31 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
             camera.position.y += 1.0f;
         } else if (key == GLFW_KEY_E) {
             camera.position.y -= 1.0f;
+        }
+        {
+            const float angle_delta = glm::radians(5.0f);
+            glm::vec2 rot_delta(0.0f);
+
+            if (key == GLFW_KEY_UP) {
+                rot_delta.x = -angle_delta;
+            } else if (key == GLFW_KEY_DOWN) {
+                rot_delta.x = angle_delta;
+            }
+
+            if (key == GLFW_KEY_LEFT) {
+                rot_delta.y = -angle_delta;
+            } else if (key == GLFW_KEY_RIGHT) {
+                rot_delta.y = angle_delta;
+            }
+
+            if (rot_delta.x != 0.0f || rot_delta.y != 0.0f) {
+                glm::quat yaw_quat   = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f)); // global yaw
+
+                glm::vec3 local_x = camera.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
+                glm::quat pitch_quat = glm::angleAxis(rot_delta.x, local_x); // local pitch
+
+                camera.rotation = yaw_quat * camera.rotation * pitch_quat;
+            }
         }
     }
 }
