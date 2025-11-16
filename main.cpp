@@ -14,6 +14,10 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
     glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
+struct Vertex {
+    glm::vec3 pos;
+};
+
 struct CameraData {
     glm::mat4 view;
     glm::mat4 projection;
@@ -75,6 +79,43 @@ int main() {
         }
     }
 
+
+    Vertex vertices[] = {
+        {glm::vec3(-0.5f, -0.5f, 0.0f)},
+        {glm::vec3( 0.5f, -0.5f, 0.0f)},
+        {glm::vec3( 0.0f,  0.5f, 0.0f)},
+    };
+    uint32_t indices[] = {0, 1, 2};
+
+    VkBuffer vertex_buffer;
+    VkBuffer index_buffer;
+    create_buffer(&vk_context, sizeof(Vertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &vertex_buffer);
+    create_buffer(&vk_context, sizeof(uint32_t) * 3, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &index_buffer);
+    
+    VkMemoryRequirements vertex_buffer_memory_requirements;
+    VkMemoryRequirements index_buffer_memory_requirements;
+    vkGetBufferMemoryRequirements(vk_context.device, vertex_buffer, &vertex_buffer_memory_requirements);
+    vkGetBufferMemoryRequirements(vk_context.device, index_buffer, &index_buffer_memory_requirements);
+    uint32_t vertex_buffer_memory_type_index = UINT32_MAX;
+    uint32_t index_buffer_memory_type_index = UINT32_MAX;
+    get_memory_type_index(&vk_context, vertex_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertex_buffer_memory_type_index);
+    get_memory_type_index(&vk_context, index_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &index_buffer_memory_type_index);
+
+    VkDeviceMemory vertex_buffer_memory;
+    VkDeviceMemory index_buffer_memory;
+    allocate_memory(&vk_context, sizeof(Vertex) * 3, vertex_buffer_memory_type_index, &vertex_buffer_memory);
+    allocate_memory(&vk_context, sizeof(uint32_t) * 3, index_buffer_memory_type_index, &index_buffer_memory);
+    void *vertex_buffer_data = nullptr;
+    void *index_buffer_data = nullptr;
+    vkMapMemory(vk_context.device, vertex_buffer_memory, 0, sizeof(Vertex) * 3, 0, &vertex_buffer_data);
+    vkMapMemory(vk_context.device, index_buffer_memory, 0, sizeof(uint32_t) * 3, 0, &index_buffer_data);
+    memcpy(vertex_buffer_data, &vertices, sizeof(Vertex) * 3);
+    memcpy(index_buffer_data, &indices, sizeof(uint32_t) * 3);
+    vkUnmapMemory(vk_context.device, vertex_buffer_memory);
+    vkUnmapMemory(vk_context.device, index_buffer_memory);
+    vkBindBufferMemory(vk_context.device, vertex_buffer, vertex_buffer_memory, 0);
+    vkBindBufferMemory(vk_context.device, index_buffer, index_buffer_memory, 0);
+    
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
@@ -140,7 +181,10 @@ int main() {
             VkRect2D scissor = {.offset = {0, 0}, .extent = {(uint32_t) width, (uint32_t) height}};
             vkCmdSetViewport(command_buffer, 0, 1, &viewport);
             vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-            vkCmdDraw(command_buffer, 3, 1, 0, 0);
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets);
+            vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(command_buffer, 3, 1, 0, 0, 0);
 
             end_render_pass(&vk_context, command_buffer);
         }

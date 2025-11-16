@@ -57,3 +57,6 @@ void begin_command_buffer(VkContext *context, VkCommandBuffer command_buffer);
 void end_command_buffer(VkContext *context, VkCommandBuffer command_buffer);
 
 void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buffer);
+
+void get_memory_type_index(VkContext *context, const VkMemoryRequirements &memory_requirements, VkMemoryPropertyFlags memory_property_flags, uint32_t *memory_type_index);
+void allocate_memory(VkContext *context, VkDeviceSize size, uint32_t memory_type_index, VkDeviceMemory *memory);

@@ -671,3 +671,28 @@ void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usa
     VkResult result = vkCreateBuffer(context->device, &buffer_create_info, nullptr, buffer);
     assert(result == VK_SUCCESS);
 }
+
+void get_memory_type_index(VkContext *context, const VkMemoryRequirements &memory_requirements, VkMemoryPropertyFlags memory_property_flags, uint32_t *memory_type_index) {
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(context->physical_device, &memory_properties);
+
+    *memory_type_index = UINT32_MAX;
+    for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
+        if ((memory_requirements.memoryTypeBits & (1 << i)) &&
+            memory_properties.memoryTypes[i].propertyFlags & memory_property_flags) {
+            *memory_type_index = i;
+            break;
+        }
+    }
+    assert(*memory_type_index != UINT32_MAX);
+}
+
+void allocate_memory(VkContext *context, VkDeviceSize size, uint32_t memory_type_index, VkDeviceMemory *memory) {
+    VkMemoryAllocateInfo memory_allocate_info = {};
+    memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memory_allocate_info.allocationSize = size;
+    memory_allocate_info.memoryTypeIndex = memory_type_index;
+
+    VkResult result = vkAllocateMemory(context->device, &memory_allocate_info, nullptr, memory);
+    assert(result == VK_SUCCESS);
+}
