@@ -1,4 +1,5 @@
 #include "vk.h"
+#include "camera.h"
 #include <cassert>
 #include <cstring>
 #include <glm/glm.hpp>
@@ -31,6 +32,10 @@ int main() {
     VkContext vk_context;
     init_vk(&vk_context, window, width, height);
 
+    Camera camera = {
+        .position = glm::vec3(0.0f, 0.0f, 1.0f),
+        .rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+    };
     CameraData camera_data = {};
 
     std::vector<VkBuffer> camera_buffers = {};
@@ -40,41 +45,13 @@ int main() {
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         create_buffer(&vk_context, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &camera_buffers[i]);
 
-        VkMemoryPropertyFlags memory_property_flags =
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
         VkMemoryRequirements memory_requirements;
         vkGetBufferMemoryRequirements(vk_context.device, camera_buffers[i], &memory_requirements);
-
-        VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(vk_context.physical_device, &memory_properties);
-
         uint32_t memory_type_index = UINT32_MAX;
-        for (uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-            if ((memory_requirements.memoryTypeBits & (1 << i)) &&
-                memory_properties.memoryTypes[i].propertyFlags & memory_property_flags) {
-                memory_type_index = i;
-                break;
-            }
-        }
-        assert(memory_type_index != UINT32_MAX);
-
-        VkMemoryAllocateInfo memory_allocate_info = {};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = memory_requirements.size;
-        memory_allocate_info.memoryTypeIndex = memory_type_index;
-
-        VkResult result = vkAllocateMemory(vk_context.device, &memory_allocate_info, nullptr,
-                                           &camera_buffer_memories[i]);
-        assert(result == VK_SUCCESS);
-
-        {
-            VkResult result = vkBindBufferMemory(vk_context.device, camera_buffers[i], camera_buffer_memories[i],
-                                                 0);
-            assert(result == VK_SUCCESS);
-        }
+        get_memory_type_index(&vk_context, memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memory_type_index);
+        allocate_memory(&vk_context, memory_requirements.size, memory_type_index, &camera_buffer_memories[i]);
+        vkBindBufferMemory(vk_context.device, camera_buffers[i], camera_buffer_memories[i], 0);
     }
-
 
     Vertex vertices[] = {
         {glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0, 0.0, 0.0)},
@@ -87,7 +64,7 @@ int main() {
     VkBuffer index_buffer;
     create_buffer(&vk_context, sizeof(Vertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &vertex_buffer);
     create_buffer(&vk_context, sizeof(uint32_t) * 3, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &index_buffer);
-    
+
     VkMemoryRequirements vertex_buffer_memory_requirements;
     VkMemoryRequirements index_buffer_memory_requirements;
     vkGetBufferMemoryRequirements(vk_context.device, vertex_buffer, &vertex_buffer_memory_requirements);
@@ -111,7 +88,7 @@ int main() {
     vkUnmapMemory(vk_context.device, index_buffer_memory);
     vkBindBufferMemory(vk_context.device, vertex_buffer, vertex_buffer_memory, 0);
     vkBindBufferMemory(vk_context.device, index_buffer, index_buffer_memory, 0);
-    
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
@@ -138,6 +115,8 @@ int main() {
 
         vkUpdateDescriptorSets(vk_context.device, 1, &write_descriptor_set, 0, nullptr);
 
+        const glm::mat4 view = compute_view_matrix(camera);
+
         // vulkan clip space has inverted y and half z
         glm::mat4 clip = glm::mat4(
             1.0f,  0.0f, 0.0f, 0.0f, // 1st column
@@ -146,7 +125,7 @@ int main() {
             0.0f,  0.0f, 0.5f, 1.0f
         );
 
-        camera_data.view = glm::mat4(1.0f);
+        camera_data.view = view;
         camera_data.projection = clip * glm::mat4(1.0f);
 
         void *ptr = nullptr;
@@ -193,10 +172,10 @@ int main() {
         vk_context.frame_index = (vk_context.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
     }
     vkDeviceWaitIdle(vk_context.device);
-    vkDestroyBuffer(vk_context.device, vertex_buffer, nullptr);
     vkDestroyBuffer(vk_context.device, index_buffer, nullptr);
-    vkFreeMemory(vk_context.device, vertex_buffer_memory, nullptr);
+    vkDestroyBuffer(vk_context.device, vertex_buffer, nullptr);
     vkFreeMemory(vk_context.device, index_buffer_memory, nullptr);
+    vkFreeMemory(vk_context.device, vertex_buffer_memory, nullptr);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyBuffer(vk_context.device, camera_buffers[i], nullptr);
         vkFreeMemory(vk_context.device, camera_buffer_memories[i], nullptr);
