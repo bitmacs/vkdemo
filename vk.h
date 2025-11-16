@@ -2,9 +2,15 @@
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+#include <glm/vec3.hpp>
 #include <vector>
 
 #define MAX_FRAMES_IN_FLIGHT 2
+
+struct Vertex {
+    glm::vec3 position;
+    glm::vec3 color;
+};
 
 struct VkContext {
     VkInstance instance;

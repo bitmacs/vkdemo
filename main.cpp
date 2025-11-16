@@ -14,10 +14,6 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
     glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
-struct Vertex {
-    glm::vec3 pos;
-};
-
 struct CameraData {
     glm::mat4 view;
     glm::mat4 projection;
@@ -38,9 +34,9 @@ int main() {
     CameraData camera_data = {};
 
     std::vector<VkBuffer> camera_buffers = {};
-    std::vector<VkDeviceMemory> camera_buffer_device_memories = {};
+    std::vector<VkDeviceMemory> camera_buffer_memories = {};
     camera_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-    camera_buffer_device_memories.resize(MAX_FRAMES_IN_FLIGHT);
+    camera_buffer_memories.resize(MAX_FRAMES_IN_FLIGHT);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         create_buffer(&vk_context, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &camera_buffers[i]);
 
@@ -69,11 +65,11 @@ int main() {
         memory_allocate_info.memoryTypeIndex = memory_type_index;
 
         VkResult result = vkAllocateMemory(vk_context.device, &memory_allocate_info, nullptr,
-                                           &camera_buffer_device_memories[i]);
+                                           &camera_buffer_memories[i]);
         assert(result == VK_SUCCESS);
 
         {
-            VkResult result = vkBindBufferMemory(vk_context.device, camera_buffers[i], camera_buffer_device_memories[i],
+            VkResult result = vkBindBufferMemory(vk_context.device, camera_buffers[i], camera_buffer_memories[i],
                                                  0);
             assert(result == VK_SUCCESS);
         }
@@ -81,9 +77,9 @@ int main() {
 
 
     Vertex vertices[] = {
-        {glm::vec3(-0.5f, -0.5f, 0.0f)},
-        {glm::vec3( 0.5f, -0.5f, 0.0f)},
-        {glm::vec3( 0.0f,  0.5f, 0.0f)},
+        {glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0, 0.0, 0.0)},
+        {glm::vec3( 0.5f, -0.5f, 0.0f), glm::vec3(0.0, 1.0, 0.0)},
+        {glm::vec3( 0.0f,  0.5f, 0.0f), glm::vec3(0.0, 0.0, 1.0)},
     };
     uint32_t indices[] = {0, 1, 2};
 
@@ -103,8 +99,8 @@ int main() {
 
     VkDeviceMemory vertex_buffer_memory;
     VkDeviceMemory index_buffer_memory;
-    allocate_memory(&vk_context, sizeof(Vertex) * 3, vertex_buffer_memory_type_index, &vertex_buffer_memory);
-    allocate_memory(&vk_context, sizeof(uint32_t) * 3, index_buffer_memory_type_index, &index_buffer_memory);
+    allocate_memory(&vk_context, vertex_buffer_memory_requirements.size, vertex_buffer_memory_type_index, &vertex_buffer_memory);
+    allocate_memory(&vk_context, index_buffer_memory_requirements.size, index_buffer_memory_type_index, &index_buffer_memory);
     void *vertex_buffer_data = nullptr;
     void *index_buffer_data = nullptr;
     vkMapMemory(vk_context.device, vertex_buffer_memory, 0, sizeof(Vertex) * 3, 0, &vertex_buffer_data);
@@ -154,10 +150,9 @@ int main() {
         camera_data.projection = clip * glm::mat4(1.0f);
 
         void *ptr = nullptr;
-        vkMapMemory(vk_context.device, camera_buffer_device_memories[vk_context.frame_index], 0, sizeof(CameraData), 0,
-                    &ptr);
+        vkMapMemory(vk_context.device, camera_buffer_memories[vk_context.frame_index], 0, sizeof(CameraData), 0, &ptr);
         memcpy(ptr, &camera_data, sizeof(CameraData));
-        vkUnmapMemory(vk_context.device, camera_buffer_device_memories[vk_context.frame_index]);
+        vkUnmapMemory(vk_context.device, camera_buffer_memories[vk_context.frame_index]);
 
         {
             VkClearValue clear_value = {};
@@ -198,9 +193,13 @@ int main() {
         vk_context.frame_index = (vk_context.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
     }
     vkDeviceWaitIdle(vk_context.device);
+    vkDestroyBuffer(vk_context.device, vertex_buffer, nullptr);
+    vkDestroyBuffer(vk_context.device, index_buffer, nullptr);
+    vkFreeMemory(vk_context.device, vertex_buffer_memory, nullptr);
+    vkFreeMemory(vk_context.device, index_buffer_memory, nullptr);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyBuffer(vk_context.device, camera_buffers[i], nullptr);
-        vkFreeMemory(vk_context.device, camera_buffer_device_memories[i], nullptr);
+        vkFreeMemory(vk_context.device, camera_buffer_memories[i], nullptr);
     }
     cleanup_vk(&vk_context);
     glfwDestroyWindow(window);

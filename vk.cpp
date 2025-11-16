@@ -2,7 +2,6 @@
 #include "file.h"
 #include <cassert>
 #include <iostream>
-#include <glm/vec3.hpp>
 
 #define LOAD_INSTANCE_PROC_ADDR(instance, name) (PFN_ ## name) vkGetInstanceProcAddr(instance, #name);
 #define LOAD_DEVICE_PROC_ADDR(device, name) (PFN_ ## name) vkGetDeviceProcAddr(device, #name);
@@ -399,28 +398,38 @@ static void create_shader_module(VkContext *context, const char *filepath, VkSha
     assert(result == VK_SUCCESS);
 }
 
-struct Vertex {
-    glm::vec3 position;
-};
-
 static void create_pipeline(VkContext *context) {
     VkVertexInputBindingDescription vertex_input_binding_description = {};
     vertex_input_binding_description.binding = 0;
     vertex_input_binding_description.stride = sizeof(Vertex);
     vertex_input_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription vertex_input_attribute_description = {};
-    vertex_input_attribute_description.binding = 0;
-    vertex_input_attribute_description.location = 0;
-    vertex_input_attribute_description.format = VK_FORMAT_R32G32B32_SFLOAT;
-    vertex_input_attribute_description.offset = offsetof(Vertex, position);
+    std::vector<VkVertexInputAttributeDescription> vertex_input_attribute_descriptions = {};
+    {
+        VkVertexInputAttributeDescription vertex_input_attribute_description = {};
+        vertex_input_attribute_description.binding = 0;
+        vertex_input_attribute_description.location = 0;
+        vertex_input_attribute_description.format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertex_input_attribute_description.offset = offsetof(Vertex, position);
+
+        vertex_input_attribute_descriptions.push_back(vertex_input_attribute_description);
+    }
+    {
+        VkVertexInputAttributeDescription vertex_input_attribute_description = {};
+        vertex_input_attribute_description.binding = 0;
+        vertex_input_attribute_description.location = 1;
+        vertex_input_attribute_description.format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertex_input_attribute_description.offset = offsetof(Vertex, color);
+
+        vertex_input_attribute_descriptions.push_back(vertex_input_attribute_description);
+    }
 
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
     vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_state_create_info.vertexBindingDescriptionCount = 0;
+    vertex_input_state_create_info.vertexBindingDescriptionCount = 1;
     vertex_input_state_create_info.pVertexBindingDescriptions = &vertex_input_binding_description;
-    vertex_input_state_create_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_state_create_info.pVertexAttributeDescriptions = &vertex_input_attribute_description;
+    vertex_input_state_create_info.vertexAttributeDescriptionCount = vertex_input_attribute_descriptions.size();
+    vertex_input_state_create_info.pVertexAttributeDescriptions = vertex_input_attribute_descriptions.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
     input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
