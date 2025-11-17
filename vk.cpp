@@ -47,6 +47,20 @@ static void create_instance(VkContext *context) {
         const char **extensions = glfwGetRequiredInstanceExtensions(&count);
         instance_extensions.insert(instance_extensions.end(), extensions, extensions + count);
     }
+    bool has_VK_KHR_portability_enumeration = false;
+    {
+        // enumerate instance extensions
+        uint32_t count = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> extensions(count);
+        vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
+        for (const auto &extension: extensions) {
+            if (strcmp(extension.extensionName, "VK_KHR_portability_enumeration") == 0) {
+                instance_extensions.push_back("VK_KHR_portability_enumeration");
+                has_VK_KHR_portability_enumeration = true;
+            }
+        }
+    }
     instance_extensions.push_back("VK_EXT_debug_utils");
 
     instance_layers.push_back("VK_LAYER_KHRONOS_validation");
@@ -78,6 +92,7 @@ static void create_instance(VkContext *context) {
     instance_create_info.enabledLayerCount = instance_layers.size();
     instance_create_info.ppEnabledLayerNames = instance_layers.data();
     instance_create_info.pNext = &debug_utils_messenger_create_info;
+    instance_create_info.flags |= has_VK_KHR_portability_enumeration ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR : 0;
 
     VkResult result = vkCreateInstance(&instance_create_info, nullptr, &context->instance);
     assert(result == VK_SUCCESS);
@@ -144,6 +159,18 @@ static void create_device(VkContext *context) {
     std::vector<const char *> device_extensions;
     std::vector<const char *> device_layers;
 
+    {
+        // enumerate device extensions
+        uint32_t count = 0;
+        vkEnumerateDeviceExtensionProperties(context->physical_device, nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> extensions(count);
+        vkEnumerateDeviceExtensionProperties(context->physical_device, nullptr, &count, extensions.data());
+        for (const auto &extension: extensions) {
+            if (strcmp(extension.extensionName, "VK_KHR_portability_subset") == 0) {
+                device_extensions.push_back("VK_KHR_portability_subset");
+            }
+        }
+    }
     device_extensions.push_back("VK_KHR_swapchain");
     device_extensions.push_back("VK_KHR_deferred_host_operations");
     device_extensions.push_back("VK_KHR_acceleration_structure");
