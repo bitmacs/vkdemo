@@ -1,14 +1,32 @@
-#include "vk.h"
 #include "camera.h"
+#include "mesh.h"
+#include "vk.h"
 #include <cassert>
 #include <cstring>
 #include <glm/glm.hpp>
-#include <glm/ext/quaternion_trigonometric.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+// MeshBuffers: 包含GPU资源和绘制所需的元数据
+struct MeshBuffers {
+    // GPU资源
+    VkBuffer vertex_buffer;
+    VkBuffer index_buffer;
+    VkDeviceMemory vertex_buffer_memory;
+    VkDeviceMemory index_buffer_memory;
+
+    // 绘制元数据（从Mesh创建时保存，用于绘制命令）
+    uint32_t index_count;      // 索引数量，用于vkCmdDrawIndexed
+    uint32_t vertex_count;     // 顶点数量，用于vkCmdDraw（非索引绘制）
+    VkIndexType index_type;    // 索引类型，默认为VK_INDEX_TYPE_UINT32
+};
 
 struct VkDemo {
 };
 
 Camera camera = {};
+VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
+VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
+std::vector<MeshBuffers> mesh_buffers_registry;
 
 static void glfw_error_callback(int error, const char *description) {
     assert(false);
@@ -30,6 +48,10 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
             camera.position.y += 1.0f;
         } else if (key == GLFW_KEY_E) {
             camera.position.y -= 1.0f;
+        } else if (key == GLFW_KEY_P) {
+            polygon_mode = polygon_mode == VK_POLYGON_MODE_FILL ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+        } else if (key == GLFW_KEY_C) {
+            cull_mode = cull_mode == VK_CULL_MODE_NONE ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
         }
         {
             const float angle_delta = glm::radians(5.0f);
@@ -64,6 +86,47 @@ struct CameraData {
     glm::mat4 projection;
 };
 
+
+// 从Mesh创建MeshBuffers，同时保存绘制所需的元数据
+void create_mesh_buffers(VkContext *context, const Mesh &mesh, MeshBuffers *mesh_buffers) {
+    // 创建GPU缓冲区
+    create_buffer(context, sizeof(Vertex) * mesh.vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &mesh_buffers->vertex_buffer);
+    create_buffer(context, sizeof(uint32_t) * mesh.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &mesh_buffers->index_buffer);
+
+    VkMemoryRequirements vertex_buffer_memory_requirements;
+    VkMemoryRequirements index_buffer_memory_requirements;
+    vkGetBufferMemoryRequirements(context->device, mesh_buffers->vertex_buffer, &vertex_buffer_memory_requirements);
+    vkGetBufferMemoryRequirements(context->device, mesh_buffers->index_buffer, &index_buffer_memory_requirements);
+    uint32_t vertex_buffer_memory_type_index = UINT32_MAX;
+    uint32_t index_buffer_memory_type_index = UINT32_MAX;
+    get_memory_type_index(context, vertex_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertex_buffer_memory_type_index);
+    get_memory_type_index(context, index_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &index_buffer_memory_type_index);
+
+    allocate_memory(context, vertex_buffer_memory_requirements.size, vertex_buffer_memory_type_index, &mesh_buffers->vertex_buffer_memory);
+    allocate_memory(context, index_buffer_memory_requirements.size, index_buffer_memory_type_index, &mesh_buffers->index_buffer_memory);
+    void *vertex_buffer_data = nullptr;
+    void *index_buffer_data = nullptr;
+    vkMapMemory(context->device, mesh_buffers->vertex_buffer_memory, 0, sizeof(Vertex) * mesh.vertices.size(), 0, &vertex_buffer_data);
+    vkMapMemory(context->device, mesh_buffers->index_buffer_memory, 0, sizeof(uint32_t) * mesh.indices.size(), 0, &index_buffer_data);
+    memcpy(vertex_buffer_data, mesh.vertices.data(), sizeof(Vertex) * mesh.vertices.size());
+    memcpy(index_buffer_data, mesh.indices.data(), sizeof(uint32_t) * mesh.indices.size());
+    vkUnmapMemory(context->device, mesh_buffers->vertex_buffer_memory);
+    vkUnmapMemory(context->device, mesh_buffers->index_buffer_memory);
+    vkBindBufferMemory(context->device, mesh_buffers->vertex_buffer, mesh_buffers->vertex_buffer_memory, 0);
+    vkBindBufferMemory(context->device, mesh_buffers->index_buffer, mesh_buffers->index_buffer_memory, 0);
+
+    // 保存绘制元数据
+    mesh_buffers->index_count = static_cast<uint32_t>(mesh.indices.size());
+    mesh_buffers->vertex_count = static_cast<uint32_t>(mesh.vertices.size());
+    mesh_buffers->index_type = VK_INDEX_TYPE_UINT32; // 默认使用uint32索引
+}
+
+void destroy_mesh_buffers(VkContext *context, MeshBuffers *mesh_buffers) {
+    vkDestroyBuffer(context->device, mesh_buffers->index_buffer, nullptr);
+    vkDestroyBuffer(context->device, mesh_buffers->vertex_buffer, nullptr);
+    vkFreeMemory(context->device, mesh_buffers->index_buffer_memory, nullptr);
+    vkFreeMemory(context->device, mesh_buffers->vertex_buffer_memory, nullptr);
+}
 int main() {
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -100,41 +163,14 @@ int main() {
         vkBindBufferMemory(vk_context.device, camera_buffers[i], camera_buffer_memories[i], 0);
     }
 
-    Vertex vertices[] = {
-        {glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0, 0.0, 0.0)},
-        {glm::vec3( 0.5f, -0.5f, 0.0f), glm::vec3(0.0, 1.0, 0.0)},
-        {glm::vec3( 0.0f,  0.5f, 0.0f), glm::vec3(0.0, 0.0, 1.0)},
-    };
-    uint32_t indices[] = {0, 1, 2};
+    // 使用mesh生成系统创建mesh
+    {
+        Mesh mesh = generate_plane_mesh(4, 4);
+        MeshBuffers mesh_buffers = {};
+        create_mesh_buffers(&vk_context, mesh, &mesh_buffers);
+        mesh_buffers_registry.push_back(mesh_buffers);
+    }
 
-    VkBuffer vertex_buffer;
-    VkBuffer index_buffer;
-    create_buffer(&vk_context, sizeof(Vertex) * 3, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &vertex_buffer);
-    create_buffer(&vk_context, sizeof(uint32_t) * 3, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &index_buffer);
-
-    VkMemoryRequirements vertex_buffer_memory_requirements;
-    VkMemoryRequirements index_buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(vk_context.device, vertex_buffer, &vertex_buffer_memory_requirements);
-    vkGetBufferMemoryRequirements(vk_context.device, index_buffer, &index_buffer_memory_requirements);
-    uint32_t vertex_buffer_memory_type_index = UINT32_MAX;
-    uint32_t index_buffer_memory_type_index = UINT32_MAX;
-    get_memory_type_index(&vk_context, vertex_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertex_buffer_memory_type_index);
-    get_memory_type_index(&vk_context, index_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &index_buffer_memory_type_index);
-
-    VkDeviceMemory vertex_buffer_memory;
-    VkDeviceMemory index_buffer_memory;
-    allocate_memory(&vk_context, vertex_buffer_memory_requirements.size, vertex_buffer_memory_type_index, &vertex_buffer_memory);
-    allocate_memory(&vk_context, index_buffer_memory_requirements.size, index_buffer_memory_type_index, &index_buffer_memory);
-    void *vertex_buffer_data = nullptr;
-    void *index_buffer_data = nullptr;
-    vkMapMemory(vk_context.device, vertex_buffer_memory, 0, sizeof(Vertex) * 3, 0, &vertex_buffer_data);
-    vkMapMemory(vk_context.device, index_buffer_memory, 0, sizeof(uint32_t) * 3, 0, &index_buffer_data);
-    memcpy(vertex_buffer_data, &vertices, sizeof(Vertex) * 3);
-    memcpy(index_buffer_data, &indices, sizeof(uint32_t) * 3);
-    vkUnmapMemory(vk_context.device, vertex_buffer_memory);
-    vkUnmapMemory(vk_context.device, index_buffer_memory);
-    vkBindBufferMemory(vk_context.device, vertex_buffer, vertex_buffer_memory, 0);
-    vkBindBufferMemory(vk_context.device, index_buffer, index_buffer_memory, 0);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -188,25 +224,20 @@ int main() {
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
                               vk_context.framebuffers[vk_context.frame_index], width, height, &clear_value);
 
-            // draw a triangle
-            vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline);
+            VkPipeline pipeline = polygon_mode == VK_POLYGON_MODE_FILL ? vk_context.pipeline_solid : vk_context.pipeline_wireframe;
+            vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1,
                                     &vk_context.descriptor_sets[vk_context.frame_index], 0, nullptr);
-            VkViewport viewport = {
-                .x = 0.0f,
-                .y = 0.0f,
-                .width = (float) width,
-                .height = (float) height,
-                .minDepth = 0.0f,
-                .maxDepth = 1.0f,
-            };
-            VkRect2D scissor = {.offset = {0, 0}, .extent = {(uint32_t) width, (uint32_t) height}};
-            vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-            vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-            VkDeviceSize offsets[] = {0};
-            vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets);
-            vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(command_buffer, 3, 1, 0, 0, 0);
+            set_viewport(command_buffer, 0, 0, width, height);
+            set_scissor(command_buffer, 0, 0, width, height);
+            vkCmdSetCullMode(command_buffer, cull_mode);
+
+            for (auto &mesh_buffers : mesh_buffers_registry) {
+                VkDeviceSize offsets[] = {0};
+                vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
+                vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
+                vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
+            }
 
             end_render_pass(&vk_context, command_buffer);
         }
@@ -220,10 +251,10 @@ int main() {
         vk_context.frame_index = (vk_context.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
     }
     vkDeviceWaitIdle(vk_context.device);
-    vkDestroyBuffer(vk_context.device, index_buffer, nullptr);
-    vkDestroyBuffer(vk_context.device, vertex_buffer, nullptr);
-    vkFreeMemory(vk_context.device, index_buffer_memory, nullptr);
-    vkFreeMemory(vk_context.device, vertex_buffer_memory, nullptr);
+    for (auto &mesh_buffers : mesh_buffers_registry) {
+        destroy_mesh_buffers(&vk_context, &mesh_buffers);
+    }
+    mesh_buffers_registry.clear();
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyBuffer(vk_context.device, camera_buffers[i], nullptr);
         vkFreeMemory(vk_context.device, camera_buffer_memories[i], nullptr);

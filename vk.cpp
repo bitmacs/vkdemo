@@ -1,5 +1,6 @@
 #include "vk.h"
 #include "file.h"
+#include "mesh.h"
 #include <cassert>
 #include <iostream>
 
@@ -187,6 +188,9 @@ static void create_device(VkContext *context) {
     queue_create_info.queueCount = 1;
     queue_create_info.pQueuePriorities = &queue_priority;
 
+    VkPhysicalDeviceFeatures device_features = {};
+    device_features.fillModeNonSolid = VK_TRUE;
+
     VkDeviceCreateInfo device_create_info = {};
     device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     device_create_info.queueCreateInfoCount = 1;
@@ -195,6 +199,7 @@ static void create_device(VkContext *context) {
     device_create_info.ppEnabledExtensionNames = device_extensions.data();
     device_create_info.enabledLayerCount = device_layers.size();
     device_create_info.ppEnabledLayerNames = device_layers.data();
+    device_create_info.pEnabledFeatures = &device_features;
 
     VkResult result = vkCreateDevice(context->physical_device, &device_create_info, nullptr, &context->device);
     assert(result == VK_SUCCESS);
@@ -425,7 +430,7 @@ static void create_shader_module(VkContext *context, const char *filepath, VkSha
     assert(result == VK_SUCCESS);
 }
 
-static void create_pipeline(VkContext *context) {
+static void create_pipeline(VkContext *context, VkPolygonMode polygon_mode, VkPipeline *pipeline) {
     VkVertexInputBindingDescription vertex_input_binding_description = {};
     vertex_input_binding_description.binding = 0;
     vertex_input_binding_description.stride = sizeof(Vertex);
@@ -464,10 +469,10 @@ static void create_pipeline(VkContext *context) {
 
     VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
     rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterization_state_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterization_state_create_info.lineWidth = 1.0f;
+    rasterization_state_create_info.polygonMode = polygon_mode;
     rasterization_state_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterization_state_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterization_state_create_info.lineWidth = 1.0f;
 
     VkPipelineColorBlendAttachmentState color_blend_attachment_state = {};
     color_blend_attachment_state.colorWriteMask =
@@ -517,6 +522,7 @@ static void create_pipeline(VkContext *context) {
     std::vector<VkDynamicState> dynamic_states = {};
     dynamic_states.emplace_back(VK_DYNAMIC_STATE_VIEWPORT);
     dynamic_states.emplace_back(VK_DYNAMIC_STATE_SCISSOR);
+    dynamic_states.emplace_back(VK_DYNAMIC_STATE_CULL_MODE);
 
     VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
     dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -537,8 +543,7 @@ static void create_pipeline(VkContext *context) {
     pipeline_create_info.pDynamicState = &dynamic_state_create_info;
     pipeline_create_info.layout = context->pipeline_layout;
     pipeline_create_info.renderPass = context->render_pass;
-    VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr,
-                                                &context->pipeline);
+    VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr, pipeline);
     assert(result == VK_SUCCESS);
 
     vkDestroyShaderModule(context->device, vertex_shader_module, nullptr);
@@ -576,7 +581,8 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_descriptor_pools(context);
     create_descriptor_set_layout(context);
     create_pipeline_layout(context);
-    create_pipeline(context);
+    create_pipeline(context, VK_POLYGON_MODE_FILL, &context->pipeline_solid);
+    create_pipeline(context, VK_POLYGON_MODE_LINE, &context->pipeline_wireframe);
     allocate_descriptor_sets(context);
     context->frame_index = 0;
 }
@@ -586,7 +592,8 @@ void cleanup_vk(VkContext *context) {
         vkFreeDescriptorSets(context->device, context->descriptor_pools[i], 1, &context->descriptor_sets[i]);
     }
     context->descriptor_sets.clear();
-    vkDestroyPipeline(context->device, context->pipeline, nullptr);
+    vkDestroyPipeline(context->device, context->pipeline_wireframe, nullptr);
+    vkDestroyPipeline(context->device, context->pipeline_solid, nullptr);
     vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -696,7 +703,7 @@ void end_command_buffer(VkContext *context, VkCommandBuffer command_buffer) {
 }
 
 void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer *buffer) {
-    VkBufferCreateInfo buffer_create_info{};
+    VkBufferCreateInfo buffer_create_info = {};
     buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     buffer_create_info.size = size;
     buffer_create_info.usage = usage;
@@ -731,4 +738,24 @@ void allocate_memory(VkContext *context, VkDeviceSize size, uint32_t memory_type
 
     VkResult result = vkAllocateMemory(context->device, &memory_allocate_info, nullptr, memory);
     assert(result == VK_SUCCESS);
+}
+
+void set_viewport(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+    VkViewport viewport = {};
+    viewport.x = (float) x;
+    viewport.y = (float) y;
+    viewport.width = (float) width;
+    viewport.height = (float) height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+}
+
+void set_scissor(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+    VkRect2D scissor = {};
+    scissor.offset.x = x;
+    scissor.offset.y = y;
+    scissor.extent.width = width;
+    scissor.extent.height = height;
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 }

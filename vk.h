@@ -7,11 +7,6 @@
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
-struct Vertex {
-    glm::vec3 position;
-    glm::vec3 color;
-};
-
 struct VkContext {
     VkInstance instance;
     VkDebugUtilsMessengerEXT debug_utils_messenger;
@@ -35,7 +30,8 @@ struct VkContext {
     std::vector<VkDescriptorPool> descriptor_pools;
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
-    VkPipeline pipeline;
+    VkPipeline pipeline_solid;
+    VkPipeline pipeline_wireframe;
     std::vector<VkDescriptorSet> descriptor_sets;
     uint32_t frame_index;
 };
@@ -66,3 +62,6 @@ void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usa
 
 void get_memory_type_index(VkContext *context, const VkMemoryRequirements &memory_requirements, VkMemoryPropertyFlags memory_property_flags, uint32_t *memory_type_index);
 void allocate_memory(VkContext *context, VkDeviceSize size, uint32_t memory_type_index, VkDeviceMemory *memory);
+
+void set_viewport(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+void set_scissor(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
