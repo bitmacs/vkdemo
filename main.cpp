@@ -36,46 +36,43 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
     if (action == GLFW_RELEASE) {
         if (key == GLFW_KEY_ESCAPE) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
-        } else if (key == GLFW_KEY_W) {
-            camera.position.z -= 1.0f;
-        } else if (key == GLFW_KEY_S) {
-            camera.position.z += 1.0f;
-        } else if (key == GLFW_KEY_A) {
-            camera.position.x -= 1.0f;
-        } else if (key == GLFW_KEY_D) {
-            camera.position.x += 1.0f;
-        } else if (key == GLFW_KEY_Q) {
-            camera.position.y += 1.0f;
-        } else if (key == GLFW_KEY_E) {
-            camera.position.y -= 1.0f;
         } else if (key == GLFW_KEY_P) {
             polygon_mode = polygon_mode == VK_POLYGON_MODE_FILL ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         } else if (key == GLFW_KEY_C) {
             cull_mode = cull_mode == VK_CULL_MODE_NONE ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
         }
         {
-            const float angle_delta = glm::radians(5.0f);
+            glm::mat3 rot_mat = glm::mat3_cast(camera.orientation);
+            glm::vec3 right = rot_mat[0];
+            glm::vec3 forward = -rot_mat[2];
+            glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+
+            float move_delta = 1.0f;
+            glm::vec3 move_dir(0.0f);
+
+            if (key == GLFW_KEY_W) { move_dir += forward; }
+            if (key == GLFW_KEY_S) { move_dir -= forward; }
+            if (key == GLFW_KEY_A) { move_dir -= right; }
+            if (key == GLFW_KEY_D) { move_dir += right; }
+            if (key == GLFW_KEY_Q) { move_dir += up; }
+            if (key == GLFW_KEY_E) { move_dir -= up; }
+            if (glm::length(move_dir) > 0.0f) {
+                camera.position += glm::normalize(move_dir) * move_delta;
+            }
+        }
+        {
+            float angle_delta = glm::radians(5.0f);
             glm::vec2 rot_delta(0.0f);
 
-            if (key == GLFW_KEY_UP) {
-                rot_delta.x = -angle_delta;
-            } else if (key == GLFW_KEY_DOWN) {
-                rot_delta.x = angle_delta;
-            }
-
-            if (key == GLFW_KEY_LEFT) {
-                rot_delta.y = -angle_delta;
-            } else if (key == GLFW_KEY_RIGHT) {
-                rot_delta.y = angle_delta;
-            }
+            if (key == GLFW_KEY_UP) { rot_delta.x += angle_delta; }
+            if (key == GLFW_KEY_DOWN) { rot_delta.x -= angle_delta; }
+            if (key == GLFW_KEY_LEFT) { rot_delta.y += angle_delta; }
+            if (key == GLFW_KEY_RIGHT) { rot_delta.y -= angle_delta; }
 
             if (rot_delta.x != 0.0f || rot_delta.y != 0.0f) {
-                glm::quat yaw_quat   = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f)); // global yaw
-
-                glm::vec3 local_x = camera.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
-                glm::quat pitch_quat = glm::angleAxis(rot_delta.x, local_x); // local pitch
-
-                camera.rotation = yaw_quat * camera.rotation * pitch_quat;
+                glm::quat yaw_quat = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f));
+                glm::quat pitch_quat = glm::angleAxis(rot_delta.x, glm::vec3(1.0f, 0.0f, 0.0f));
+                camera.orientation = glm::normalize(yaw_quat * camera.orientation * pitch_quat);
             }
         }
     }
@@ -86,6 +83,9 @@ struct CameraData {
     glm::mat4 projection;
 };
 
+struct InstanceConstants {
+    glm::mat4 model;
+};
 
 // 从Mesh创建MeshBuffers，同时保存绘制所需的元数据
 void create_mesh_buffers(VkContext *context, const Mesh &mesh, MeshBuffers *mesh_buffers) {
@@ -140,7 +140,7 @@ int main() {
     init_vk(&vk_context, window, width, height);
 
     camera.position = glm::vec3(0.0f, 0.0f, 2.0f);
-    camera.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    camera.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     camera.fov_y = glm::radians(45.0f);
     camera.aspect_ratio = (float) width / (float) height;
     camera.z_near = 0.1f;
@@ -233,6 +233,9 @@ int main() {
             vkCmdSetCullMode(command_buffer, cull_mode);
 
             for (auto &mesh_buffers : mesh_buffers_registry) {
+                InstanceConstants instance = {};
+                instance.model = glm::mat4(1.0f);
+                vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
                 VkDeviceSize offsets[] = {0};
                 vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
                 vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);

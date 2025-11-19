@@ -4,10 +4,10 @@
 #include <glm/detail/type_quat.hpp>
 
 struct Camera {
-    glm::vec3 position;
-    glm::quat rotation;
-    float fov_y;
-    float aspect_ratio;
+    glm::vec3 position; // 位置
+    glm::quat orientation; // 朝向
+    float fov_y; // in radians
+    float aspect_ratio; // width / height
     float z_near;
     float z_far;
 };
