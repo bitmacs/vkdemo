@@ -127,6 +127,10 @@ void destroy_mesh_buffers(VkContext *context, MeshBuffers *mesh_buffers) {
     vkFreeMemory(context->device, mesh_buffers->index_buffer_memory, nullptr);
     vkFreeMemory(context->device, mesh_buffers->vertex_buffer_memory, nullptr);
 }
+
+struct FrameContext {
+};
+
 int main() {
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -138,6 +142,11 @@ int main() {
     glfwSetKeyCallback(window, glfw_key_callback);
     VkContext vk_context;
     init_vk(&vk_context, window, width, height);
+
+    std::vector<FrameContext> frame_contexts = {};
+    frame_contexts.resize(MAX_FRAMES_IN_FLIGHT);
+    uint32_t frame_index = 0;
+    uint64_t frame_count = 0;
 
     camera.position = glm::vec3(0.0f, 0.0f, 2.0f);
     camera.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -165,7 +174,7 @@ int main() {
 
     // 使用mesh生成系统创建mesh
     {
-        Mesh mesh = generate_plane_mesh(4, 4);
+        Mesh mesh = generate_triangle_mesh();
         MeshBuffers mesh_buffers = {};
         create_mesh_buffers(&vk_context, mesh, &mesh_buffers);
         mesh_buffers_registry.push_back(mesh_buffers);
@@ -254,6 +263,10 @@ int main() {
         vk_context.frame_index = (vk_context.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
     }
     vkDeviceWaitIdle(vk_context.device);
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        // todo cleanup frame context
+    }
+    frame_contexts.clear();
     for (auto &mesh_buffers : mesh_buffers_registry) {
         destroy_mesh_buffers(&vk_context, &mesh_buffers);
     }
