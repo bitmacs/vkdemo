@@ -94,7 +94,9 @@ static void create_instance(VkContext *context) {
     instance_create_info.enabledLayerCount = instance_layers.size();
     instance_create_info.ppEnabledLayerNames = instance_layers.data();
     instance_create_info.pNext = &debug_utils_messenger_create_info;
-    instance_create_info.flags |= has_VK_KHR_portability_enumeration ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR : 0;
+    instance_create_info.flags |= has_VK_KHR_portability_enumeration
+                                      ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+                                      : 0;
 
     VkResult result = vkCreateInstance(&instance_create_info, nullptr, &context->instance);
     assert(result == VK_SUCCESS);
@@ -293,37 +295,6 @@ static void create_command_pool(VkContext *context) {
     assert(result == VK_SUCCESS);
 }
 
-static void create_command_buffers(VkContext *context) {
-    context->command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-
-    VkCommandBufferAllocateInfo command_buffer_allocate_info = {};
-    command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    command_buffer_allocate_info.commandPool = context->command_pool;
-    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    command_buffer_allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-    VkResult result = vkAllocateCommandBuffers(context->device, &command_buffer_allocate_info,
-                                               context->command_buffers.data());
-    assert(result == VK_SUCCESS);
-}
-
-static void create_semaphores(VkContext *context) {
-    context->image_acquired_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    context->render_complete_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-
-    VkSemaphoreCreateInfo semaphore_create_info = {};
-    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphore_create_info.flags = VK_SEMAPHORE_TYPE_BINARY;
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkResult result = vkCreateSemaphore(context->device, &semaphore_create_info, nullptr,
-                                            &context->image_acquired_semaphores[i]);
-        assert(result == VK_SUCCESS);
-        result = vkCreateSemaphore(context->device, &semaphore_create_info, nullptr,
-                                   &context->render_complete_semaphores[i]);
-        assert(result == VK_SUCCESS);
-    }
-}
-
 static void create_render_pass(VkContext *context) {
     VkAttachmentDescription color_attachment = {};
     color_attachment.format = context->surface_format;
@@ -355,7 +326,7 @@ static void create_render_pass(VkContext *context) {
 }
 
 static void create_framebuffers(VkContext *context, uint32_t width, uint32_t height) {
-    context->framebuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    context->framebuffers.resize(context->swapchain_image_count);
 
     for (size_t i = 0; i < context->swapchain_image_views.size(); ++i) {
         VkFramebufferCreateInfo framebuffer_create_info = {};
@@ -369,28 +340,6 @@ static void create_framebuffers(VkContext *context, uint32_t width, uint32_t hei
 
         VkResult result = vkCreateFramebuffer(context->device, &framebuffer_create_info, nullptr,
                                               &context->framebuffers[i]);
-        assert(result == VK_SUCCESS);
-    }
-}
-
-static void create_descriptor_pools(VkContext *context) {
-    context->descriptor_pools.resize(MAX_FRAMES_IN_FLIGHT);
-
-    VkDescriptorPoolSize descriptor_pool_sizes[] = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-    };
-
-    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
-    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    descriptor_pool_create_info.maxSets = 1;
-    descriptor_pool_create_info.poolSizeCount = std::size(descriptor_pool_sizes);
-    descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes;
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkResult result = vkCreateDescriptorPool(context->device, &descriptor_pool_create_info, nullptr,
-                                                 &context->descriptor_pools[i]);
         assert(result == VK_SUCCESS);
     }
 }
@@ -557,22 +506,6 @@ static void create_pipeline(VkContext *context, VkPolygonMode polygon_mode, VkPi
     vkDestroyShaderModule(context->device, fragment_shader_module, nullptr);
 }
 
-static void allocate_descriptor_sets(VkContext *context) {
-    context->descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
-
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
-        descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptor_set_allocate_info.descriptorPool = context->descriptor_pools[i];
-        descriptor_set_allocate_info.descriptorSetCount = 1;
-        descriptor_set_allocate_info.pSetLayouts = &context->descriptor_set_layout;
-
-        VkResult result = vkAllocateDescriptorSets(context->device, &descriptor_set_allocate_info,
-                                                   &context->descriptor_sets[i]);
-        assert(result == VK_SUCCESS);
-    }
-}
-
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
     create_instance(context);
     create_surface(context, window);
@@ -580,45 +513,24 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_device(context);
     create_swapchain(context, width, height);
     create_command_pool(context);
-    create_command_buffers(context);
-    create_semaphores(context);
     create_render_pass(context);
     create_framebuffers(context, width, height);
-    create_descriptor_pools(context);
     create_descriptor_set_layout(context);
     create_pipeline_layout(context);
     create_pipeline(context, VK_POLYGON_MODE_FILL, &context->pipeline_solid);
     create_pipeline(context, VK_POLYGON_MODE_LINE, &context->pipeline_wireframe);
-    allocate_descriptor_sets(context);
-    context->frame_index = 0;
 }
 
 void cleanup_vk(VkContext *context) {
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        vkFreeDescriptorSets(context->device, context->descriptor_pools[i], 1, &context->descriptor_sets[i]);
-    }
-    context->descriptor_sets.clear();
     vkDestroyPipeline(context->device, context->pipeline_wireframe, nullptr);
     vkDestroyPipeline(context->device, context->pipeline_solid, nullptr);
     vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        vkDestroyDescriptorPool(context->device, context->descriptor_pools[i], nullptr);
-    }
-    context->descriptor_pools.clear();
     for (size_t i = 0; i < context->framebuffers.size(); ++i) {
         vkDestroyFramebuffer(context->device, context->framebuffers[i], nullptr);
     }
     context->framebuffers.clear();
     vkDestroyRenderPass(context->device, context->render_pass, nullptr);
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        vkDestroySemaphore(context->device, context->render_complete_semaphores[i], nullptr);
-        vkDestroySemaphore(context->device, context->image_acquired_semaphores[i], nullptr);
-    }
-    context->render_complete_semaphores.clear();
-    context->image_acquired_semaphores.clear();
-    vkFreeCommandBuffers(context->device, context->command_pool, MAX_FRAMES_IN_FLIGHT, context->command_buffers.data());
-    context->command_buffers.clear();
     vkDestroyCommandPool(context->device, context->command_pool, nullptr);
     for (uint32_t i = 0; i < context->swapchain_image_views.size(); ++i) {
         vkDestroyImageView(context->device, context->swapchain_image_views[i], nullptr);
@@ -633,35 +545,35 @@ void cleanup_vk(VkContext *context) {
     vkDestroyInstance(context->instance, nullptr);
 }
 
-void acquire_next_image(VkContext *context, uint32_t *image_index) {
-    VkResult result = vkAcquireNextImageKHR(context->device, context->swapchain, UINT64_MAX,
-                                            context->image_acquired_semaphores[context->frame_index],
+void acquire_next_image(VkContext *context, VkSemaphore image_acquired_semaphore, uint32_t *image_index) {
+    VkResult result = vkAcquireNextImageKHR(context->device, context->swapchain, UINT64_MAX, image_acquired_semaphore,
                                             VK_NULL_HANDLE, image_index);
     assert(result == VK_SUCCESS);
 }
 
-void submit(VkContext *context, VkFence fence) {
+void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore,
+            VkSemaphore signal_semaphore, VkFence fence) {
     VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &context->image_acquired_semaphores[context->frame_index];
+    submit_info.pWaitSemaphores = &wait_semaphore;
     submit_info.pWaitDstStageMask = &wait_dst_stage;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &context->command_buffers[context->frame_index];
+    submit_info.pCommandBuffers = &command_buffer;
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &context->render_complete_semaphores[context->frame_index];
+    submit_info.pSignalSemaphores = &signal_semaphore;
 
     VkResult result = vkQueueSubmit(context->queue, 1, &submit_info, fence);
     assert(result == VK_SUCCESS);
 }
 
-void present(VkContext *context, uint32_t image_index) {
+void present(VkContext *context, VkSemaphore wait_semaphore, uint32_t image_index) {
     VkPresentInfoKHR present_info = {};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &context->render_complete_semaphores[context->frame_index];
+    present_info.pWaitSemaphores = &wait_semaphore;
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &context->swapchain;
     present_info.pImageIndices = &image_index;
@@ -710,7 +622,8 @@ void create_buffer(VkContext *context, VkDeviceSize size, VkBufferUsageFlags usa
     assert(result == VK_SUCCESS);
 }
 
-void get_memory_type_index(VkContext *context, const VkMemoryRequirements &memory_requirements, VkMemoryPropertyFlags memory_property_flags, uint32_t *memory_type_index) {
+void get_memory_type_index(VkContext *context, const VkMemoryRequirements &memory_requirements,
+                           VkMemoryPropertyFlags memory_property_flags, uint32_t *memory_type_index) {
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(context->physical_device, &memory_properties);
 
