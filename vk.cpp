@@ -306,19 +306,6 @@ static void create_command_buffers(VkContext *context) {
     assert(result == VK_SUCCESS);
 }
 
-static void create_fences(VkContext *context) {
-    context->fences.resize(MAX_FRAMES_IN_FLIGHT);
-
-    VkFenceCreateInfo fence_create_info = {};
-    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkResult result = vkCreateFence(context->device, &fence_create_info, nullptr, &context->fences[i]);
-        assert(result == VK_SUCCESS);
-    }
-}
-
 static void create_semaphores(VkContext *context) {
     context->image_acquired_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
     context->render_complete_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -594,7 +581,6 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_swapchain(context, width, height);
     create_command_pool(context);
     create_command_buffers(context);
-    create_fences(context);
     create_semaphores(context);
     create_render_pass(context);
     create_framebuffers(context, width, height);
@@ -631,10 +617,6 @@ void cleanup_vk(VkContext *context) {
     }
     context->render_complete_semaphores.clear();
     context->image_acquired_semaphores.clear();
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        vkDestroyFence(context->device, context->fences[i], nullptr);
-    }
-    context->fences.clear();
     vkFreeCommandBuffers(context->device, context->command_pool, MAX_FRAMES_IN_FLIGHT, context->command_buffers.data());
     context->command_buffers.clear();
     vkDestroyCommandPool(context->device, context->command_pool, nullptr);
@@ -651,13 +633,6 @@ void cleanup_vk(VkContext *context) {
     vkDestroyInstance(context->instance, nullptr);
 }
 
-void wait_for_previous_frame(VkContext *context) {
-    VkResult result = vkWaitForFences(context->device, 1, &context->fences[context->frame_index], VK_TRUE,UINT64_MAX);
-    assert(result == VK_SUCCESS);
-    result = vkResetFences(context->device, 1, &context->fences[context->frame_index]);
-    assert(result == VK_SUCCESS);
-}
-
 void acquire_next_image(VkContext *context, uint32_t *image_index) {
     VkResult result = vkAcquireNextImageKHR(context->device, context->swapchain, UINT64_MAX,
                                             context->image_acquired_semaphores[context->frame_index],
@@ -665,7 +640,7 @@ void acquire_next_image(VkContext *context, uint32_t *image_index) {
     assert(result == VK_SUCCESS);
 }
 
-void submit(VkContext *context) {
+void submit(VkContext *context, VkFence fence) {
     VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submit_info = {};
@@ -678,7 +653,7 @@ void submit(VkContext *context) {
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = &context->render_complete_semaphores[context->frame_index];
 
-    VkResult result = vkQueueSubmit(context->queue, 1, &submit_info, context->fences[context->frame_index]);
+    VkResult result = vkQueueSubmit(context->queue, 1, &submit_info, fence);
     assert(result == VK_SUCCESS);
 }
 

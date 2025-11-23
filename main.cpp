@@ -131,6 +131,15 @@ void destroy_mesh_buffers(VkContext *context, MeshBuffers *mesh_buffers) {
 struct FrameContext {
 };
 
+std::vector<VkFence> fences = {};
+
+void wait_for_frame(VkContext *context, uint32_t frame_index) {
+    VkResult result = vkWaitForFences(context->device, 1, &fences[frame_index], VK_TRUE,UINT64_MAX);
+    assert(result == VK_SUCCESS);
+    result = vkResetFences(context->device, 1, &fences[frame_index]);
+    assert(result == VK_SUCCESS);
+}
+
 int main() {
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -143,6 +152,14 @@ int main() {
     VkContext vk_context;
     init_vk(&vk_context, window, width, height);
 
+    fences.resize(MAX_FRAMES_IN_FLIGHT);
+    VkFenceCreateInfo fence_create_info = {};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkResult result = vkCreateFence(vk_context.device, &fence_create_info, nullptr, &fences[i]);
+        assert(result == VK_SUCCESS);
+    }
     std::vector<FrameContext> frame_contexts = {};
     frame_contexts.resize(MAX_FRAMES_IN_FLIGHT);
     uint32_t frame_index = 0;
@@ -184,7 +201,7 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-        wait_for_previous_frame(&vk_context);
+        wait_for_frame(&vk_context, vk_context.frame_index);
 
         uint32_t image_index;
         acquire_next_image(&vk_context, &image_index);
@@ -256,7 +273,7 @@ int main() {
 
         end_command_buffer(&vk_context, command_buffer);
 
-        submit(&vk_context);
+        submit(&vk_context, fences[vk_context.frame_index]);
 
         present(&vk_context, image_index);
 
@@ -267,6 +284,10 @@ int main() {
         // todo cleanup frame context
     }
     frame_contexts.clear();
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        vkDestroyFence(vk_context.device, fences[i], nullptr);
+    }
+    fences.clear();
     for (auto &mesh_buffers : mesh_buffers_registry) {
         destroy_mesh_buffers(&vk_context, &mesh_buffers);
     }

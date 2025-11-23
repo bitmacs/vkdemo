@@ -23,7 +23,6 @@ struct VkContext {
     std::vector<VkImageView> swapchain_image_views;
     VkCommandPool command_pool;
     std::vector<VkCommandBuffer> command_buffers;
-    std::vector<VkFence> fences;
     std::vector<VkSemaphore> image_acquired_semaphores;
     std::vector<VkSemaphore> render_complete_semaphores;
     VkRenderPass render_pass;
@@ -41,12 +40,9 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
 
 void cleanup_vk(VkContext *context);
 
-// wait for the previous frame's graphics commands to complete on the gpu
-void wait_for_previous_frame(VkContext *context);
-
 void acquire_next_image(VkContext *context, uint32_t *image_index);
 
-void submit(VkContext *context);
+void submit(VkContext *context, VkFence fence);
 
 void present(VkContext *context, uint32_t image_index);
 
