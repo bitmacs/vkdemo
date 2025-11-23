@@ -220,10 +220,21 @@ static void create_swapchain(VkContext *context, uint32_t width, uint32_t height
     VkFormat surface_format = formats[0].format;
     VkColorSpaceKHR surface_color_space = formats[0].colorSpace;
 
+    VkSurfaceCapabilitiesKHR surface_capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context->physical_device, context->surface, &surface_capabilities);
+
+    uint32_t min_image_count = 2;
+    if (surface_capabilities.minImageCount > min_image_count) {
+        min_image_count = surface_capabilities.minImageCount;
+    }
+    if (surface_capabilities.maxImageCount > 0 && surface_capabilities.maxImageCount < min_image_count) {
+        min_image_count = surface_capabilities.maxImageCount;
+    }
+
     VkSwapchainCreateInfoKHR swapchain_create_info = {};
     swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchain_create_info.surface = context->surface;
-    swapchain_create_info.minImageCount = MAX_FRAMES_IN_FLIGHT;
+    swapchain_create_info.minImageCount = min_image_count;
     swapchain_create_info.imageFormat = surface_format;
     swapchain_create_info.imageColorSpace = surface_color_space;
     swapchain_create_info.imageExtent = {width, height};
@@ -240,6 +251,7 @@ static void create_swapchain(VkContext *context, uint32_t width, uint32_t height
 
     context->surface_format = surface_format;
     context->surface_color_space = surface_color_space;
+    context->swapchain_image_count = min_image_count;
 
     // get swapchain images
     uint32_t image_count = 0;
