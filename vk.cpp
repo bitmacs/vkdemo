@@ -1,6 +1,6 @@
 #include "vk.h"
 #include "file.h"
-#include "mesh.h"
+#include "meshes.h"
 #include <cassert>
 #include <iostream>
 #include <glm/mat4x4.hpp>
@@ -147,14 +147,14 @@ static void pick_physical_device(VkContext *context) {
         VkPhysicalDeviceProperties device_properties;
         vkGetPhysicalDeviceProperties(device, &device_properties);
 
-        if (device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+        // if (device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             context->physical_device = device;
             context->queue_family_index = queue_family_index;
 
             printf("using physical device: %s\n", device_properties.deviceName);
 
             return;
-        }
+        // }
     }
     assert(false && "no suitable physical device found");
 }
@@ -176,11 +176,11 @@ static void create_device(VkContext *context) {
         }
     }
     device_extensions.push_back("VK_KHR_swapchain");
-    device_extensions.push_back("VK_KHR_deferred_host_operations");
-    device_extensions.push_back("VK_KHR_acceleration_structure");
-    device_extensions.push_back("VK_KHR_ray_query");
-    device_extensions.push_back("VK_KHR_pipeline_library");
-    device_extensions.push_back("VK_KHR_ray_tracing_pipeline");
+    // device_extensions.push_back("VK_KHR_deferred_host_operations");
+    // device_extensions.push_back("VK_KHR_acceleration_structure");
+    // device_extensions.push_back("VK_KHR_ray_query");
+    // device_extensions.push_back("VK_KHR_pipeline_library");
+    // device_extensions.push_back("VK_KHR_ray_tracing_pipeline");
 
     device_layers.push_back("VK_LAYER_KHRONOS_validation");
 
@@ -548,7 +548,7 @@ void cleanup_vk(VkContext *context) {
 void acquire_next_image(VkContext *context, VkSemaphore image_acquired_semaphore, uint32_t *image_index) {
     VkResult result = vkAcquireNextImageKHR(context->device, context->swapchain, UINT64_MAX, image_acquired_semaphore,
                                             VK_NULL_HANDLE, image_index);
-    assert(result == VK_SUCCESS);
+    // assert(result == VK_SUCCESS);
 }
 
 void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore,
@@ -579,7 +579,7 @@ void present(VkContext *context, VkSemaphore wait_semaphore, uint32_t image_inde
     present_info.pImageIndices = &image_index;
 
     VkResult result = vkQueuePresentKHR(context->queue, &present_info);
-    assert(result == VK_SUCCESS);
+    // assert(result == VK_SUCCESS);
 }
 
 void begin_render_pass(VkContext *context, VkCommandBuffer command_buffer, VkRenderPass render_pass,

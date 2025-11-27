@@ -1,27 +1,17 @@
 #include "camera.h"
-#include "mesh.h"
+#include "frame_context.h"
+#include "meshes.h"
+#include "semaphores.h"
+#include "tasks.h"
 #include "vk.h"
 #include <cassert>
 #include <cstring>
 #include <unordered_set>
+#include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#define MAX_FRAMES_IN_FLIGHT 1
-
-// MeshBuffers: 包含GPU资源和绘制所需的元数据
-struct MeshBuffers {
-    // GPU资源
-    VkBuffer vertex_buffer;
-    VkBuffer index_buffer;
-    VkDeviceMemory vertex_buffer_memory;
-    VkDeviceMemory index_buffer_memory;
-
-    // 绘制元数据（从Mesh创建时保存，用于绘制命令）
-    uint32_t index_count;      // 索引数量，用于vkCmdDrawIndexed
-    uint32_t vertex_count;     // 顶点数量，用于vkCmdDraw（非索引绘制）
-    VkIndexType index_type;    // 索引类型，默认为VK_INDEX_TYPE_UINT32
-};
+#define MAX_FRAMES_IN_FLIGHT 2
 
 struct VkDemo {
 };
@@ -29,7 +19,7 @@ struct VkDemo {
 Camera camera = {};
 VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
 VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
-std::vector<MeshBuffers> mesh_buffers_registry;
+entt::registry registry;
 
 static void glfw_error_callback(int error, const char *description) {
     assert(false);
@@ -90,86 +80,6 @@ struct InstanceConstants {
     glm::mat4 model;
 };
 
-// 从Mesh创建MeshBuffers，同时保存绘制所需的元数据
-void create_mesh_buffers(VkContext *context, const Mesh &mesh, MeshBuffers *mesh_buffers) {
-    // 创建GPU缓冲区
-    create_buffer(context, sizeof(Vertex) * mesh.vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &mesh_buffers->vertex_buffer);
-    create_buffer(context, sizeof(uint32_t) * mesh.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &mesh_buffers->index_buffer);
-
-    VkMemoryRequirements vertex_buffer_memory_requirements;
-    VkMemoryRequirements index_buffer_memory_requirements;
-    vkGetBufferMemoryRequirements(context->device, mesh_buffers->vertex_buffer, &vertex_buffer_memory_requirements);
-    vkGetBufferMemoryRequirements(context->device, mesh_buffers->index_buffer, &index_buffer_memory_requirements);
-    uint32_t vertex_buffer_memory_type_index = UINT32_MAX;
-    uint32_t index_buffer_memory_type_index = UINT32_MAX;
-    get_memory_type_index(context, vertex_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertex_buffer_memory_type_index);
-    get_memory_type_index(context, index_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &index_buffer_memory_type_index);
-
-    allocate_memory(context, vertex_buffer_memory_requirements.size, vertex_buffer_memory_type_index, &mesh_buffers->vertex_buffer_memory);
-    allocate_memory(context, index_buffer_memory_requirements.size, index_buffer_memory_type_index, &mesh_buffers->index_buffer_memory);
-    void *vertex_buffer_data = nullptr;
-    void *index_buffer_data = nullptr;
-    vkMapMemory(context->device, mesh_buffers->vertex_buffer_memory, 0, sizeof(Vertex) * mesh.vertices.size(), 0, &vertex_buffer_data);
-    vkMapMemory(context->device, mesh_buffers->index_buffer_memory, 0, sizeof(uint32_t) * mesh.indices.size(), 0, &index_buffer_data);
-    memcpy(vertex_buffer_data, mesh.vertices.data(), sizeof(Vertex) * mesh.vertices.size());
-    memcpy(index_buffer_data, mesh.indices.data(), sizeof(uint32_t) * mesh.indices.size());
-    vkUnmapMemory(context->device, mesh_buffers->vertex_buffer_memory);
-    vkUnmapMemory(context->device, mesh_buffers->index_buffer_memory);
-    vkBindBufferMemory(context->device, mesh_buffers->vertex_buffer, mesh_buffers->vertex_buffer_memory, 0);
-    vkBindBufferMemory(context->device, mesh_buffers->index_buffer, mesh_buffers->index_buffer_memory, 0);
-
-    // 保存绘制元数据
-    mesh_buffers->index_count = static_cast<uint32_t>(mesh.indices.size());
-    mesh_buffers->vertex_count = static_cast<uint32_t>(mesh.vertices.size());
-    mesh_buffers->index_type = VK_INDEX_TYPE_UINT32; // 默认使用uint32索引
-}
-
-void destroy_mesh_buffers(VkContext *context, MeshBuffers *mesh_buffers) {
-    vkDestroyBuffer(context->device, mesh_buffers->index_buffer, nullptr);
-    vkDestroyBuffer(context->device, mesh_buffers->vertex_buffer, nullptr);
-    vkFreeMemory(context->device, mesh_buffers->index_buffer_memory, nullptr);
-    vkFreeMemory(context->device, mesh_buffers->vertex_buffer_memory, nullptr);
-}
-
-struct FrameContext {
-};
-
-struct SemaphorePool {
-    std::unordered_set<VkSemaphore> available_semaphores;
-    std::unordered_set<VkSemaphore> used_semaphores;
-
-    VkSemaphore acquire_semaphore(VkContext *context) {
-        if (available_semaphores.empty()) {
-            VkSemaphoreCreateInfo semaphore_create_info = {};
-            semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            semaphore_create_info.flags = VK_SEMAPHORE_TYPE_BINARY;
-            VkSemaphore semaphore;
-            vkCreateSemaphore(context->device, &semaphore_create_info, nullptr, &semaphore);
-            available_semaphores.insert(semaphore);
-        }
-        VkSemaphore semaphore = *available_semaphores.begin();
-        available_semaphores.erase(semaphore);
-        used_semaphores.insert(semaphore);
-        return semaphore;
-    }
-
-    void release_semaphore(VkSemaphore semaphore) {
-        used_semaphores.erase(semaphore);
-        available_semaphores.insert(semaphore);
-    }
-
-    void cleanup(VkContext *context) {
-        for (auto &semaphore: available_semaphores) {
-            vkDestroySemaphore(context->device, semaphore, nullptr);
-        }
-        available_semaphores.clear();
-        for (auto &semaphore: used_semaphores) {
-            vkDestroySemaphore(context->device, semaphore, nullptr);
-        }
-        used_semaphores.clear();
-    }
-};
-
 std::vector<VkFence> fences = {}; // each frame has a fence
 std::vector<VkSemaphore> image_acquired_semaphores = {}; // each swapchain image has a image acquired semaphore
 std::vector<VkSemaphore> render_complete_semaphores = {}; // each swapchain image has a render complete semaphore
@@ -222,6 +132,19 @@ static void wait_for_frame(VkContext *context, uint32_t frame_index) {
     assert(result == VK_SUCCESS);
 }
 
+struct Mesh {
+    MeshBuffersHandle mesh_buffers_handle;
+};
+
+struct Transform {
+    glm::vec3 position;
+    glm::quat orientation;
+    glm::vec3 scale;
+};
+
+TaskSystem task_system = {};
+MeshBuffersRegistry mesh_buffers_registry = {};
+
 int main() {
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -262,7 +185,6 @@ int main() {
     std::vector<FrameContext> frame_contexts = {};
     frame_contexts.resize(MAX_FRAMES_IN_FLIGHT);
     uint32_t frame_index = 0;
-    uint64_t frame_count = 0;
 
     camera.position = glm::vec3(0.0f, 0.0f, 2.0f);
     camera.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -290,18 +212,29 @@ int main() {
         vkBindBufferMemory(vk_context.device, camera_buffers[i], camera_buffer_memories[i], 0);
     }
 
-    // 使用mesh生成系统创建mesh
+    // registry.on_construct<Mesh>().connect<&MeshBuffers::create_mesh_buffers>();
+    // registry.on_destroy<Mesh>().connect<&MeshBuffers::destroy_mesh_buffers>();
     {
-        Mesh mesh = generate_triangle_mesh();
-        MeshBuffers mesh_buffers = {};
-        create_mesh_buffers(&vk_context, mesh, &mesh_buffers);
-        mesh_buffers_registry.push_back(mesh_buffers);
+        auto entity = registry.create();
+
+        Mesh &mesh = registry.emplace<Mesh>(entity);
+        MeshData mesh_data = generate_triangle_mesh_data();
+        mesh.mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        Transform &transform = registry.emplace<Transform>(entity);
+        transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
+        transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        exec_tasks(&task_system);
     }
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
         wait_for_frame(&vk_context, frame_index);
+
+        on_gpu_complete(&frame_contexts[frame_index], &mesh_buffers_registry, &task_system, &vk_context);
 
         uint32_t image_index;
         VkSemaphore image_acquired_semaphore = semaphore_pool.acquire_semaphore(&vk_context);
@@ -365,7 +298,20 @@ int main() {
             set_scissor(command_buffer, 0, 0, width, height);
             vkCmdSetCullMode(command_buffer, cull_mode);
 
-            for (auto &mesh_buffers: mesh_buffers_registry) {
+            auto view = registry.view<Mesh, Transform>();
+            for (auto entity: view) {
+                Mesh &mesh = view.get<Mesh>(entity);
+                Transform &transform = view.get<Transform>(entity);
+
+                if (!add_ref(&frame_contexts[frame_index], &mesh_buffers_registry, mesh.mesh_buffers_handle)) {
+                    continue;
+                }
+                if (!is_mesh_buffers_uploaded(&mesh_buffers_registry, mesh.mesh_buffers_handle)) {
+                    continue;
+                }
+
+                MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[mesh.mesh_buffers_handle].mesh_buffers;
+
                 InstanceConstants instance = {};
                 instance.model = glm::mat4(1.0f);
                 vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -394,9 +340,15 @@ int main() {
     }
     vkDeviceWaitIdle(vk_context.device);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        // todo cleanup frame context
+        on_gpu_complete(&frame_contexts[i], &mesh_buffers_registry, &task_system, &vk_context);
     }
     frame_contexts.clear();
+    for (auto view = registry.view<Mesh>(); auto entity: view) {
+        Mesh &mesh = view.get<Mesh>(entity);
+        release_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, mesh.mesh_buffers_handle);
+    }
+    registry.clear();
+    exec_tasks(&task_system);
     for (uint32_t i = 0; i < vk_context.swapchain_image_count; ++i) {
         if (render_complete_semaphores[i] != VK_NULL_HANDLE) {
             semaphore_pool.release_semaphore(render_complete_semaphores[i]);
@@ -414,10 +366,6 @@ int main() {
         vkDestroyFence(vk_context.device, fences[i], nullptr);
     }
     fences.clear();
-    for (auto &mesh_buffers: mesh_buffers_registry) {
-        destroy_mesh_buffers(&vk_context, &mesh_buffers);
-    }
-    mesh_buffers_registry.clear();
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         vkDestroyBuffer(vk_context.device, camera_buffers[i], nullptr);
         vkFreeMemory(vk_context.device, camera_buffer_memories[i], nullptr);
