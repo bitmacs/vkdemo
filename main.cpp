@@ -140,6 +140,9 @@ int main() {
     GLFWwindow *window = glfwCreateWindow(width, height, "VkDemo", nullptr, nullptr);
     glfwSetKeyCallback(window, glfw_key_callback);
     glfwSetScrollCallback(window, glfw_scroll_callback);
+
+    start(&task_system);
+
     VkContext vk_context;
     init_vk(&vk_context, window, width, height);
 
@@ -216,8 +219,6 @@ int main() {
         transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
         transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
-
-        exec_tasks(&task_system);
     }
 
     while (!glfwWindowShouldClose(window)) {
@@ -339,7 +340,7 @@ int main() {
         release_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, mesh.mesh_buffers_handle);
     }
     registry.clear();
-    exec_tasks(&task_system);
+    stop(&task_system);
     for (uint32_t i = 0; i < vk_context.swapchain_image_count; ++i) {
         if (render_complete_semaphores[i] != VK_NULL_HANDLE) {
             semaphore_pool.release_semaphore(render_complete_semaphores[i]);

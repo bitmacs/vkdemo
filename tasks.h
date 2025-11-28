@@ -2,13 +2,18 @@
 
 #include <functional>
 #include <mutex>
-#include <vector>
+#include <queue>
+#include <thread>
 
 struct TaskSystem {
-    std::vector<std::function<void()>> tasks;
-    std::mutex mutex;
+    std::thread worker_thread;
+    std::queue<std::function<void()>> tasks;
+    std::mutex tasks_mutex;
+    std::condition_variable tasks_condition_variable;
+    bool request_stop;
 };
 
-void push_task(TaskSystem *task_system, std::function<void()> &&task);
+void start(TaskSystem *task_system);
+void stop(TaskSystem *task_system);
 
-void exec_tasks(TaskSystem *task_system);
+void push_task(TaskSystem *task_system, std::function<void()> &&task);
