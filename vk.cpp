@@ -2,6 +2,7 @@
 #include "file.h"
 #include "meshes.h"
 #include <cassert>
+#include <cstring>
 #include <iostream>
 #include <glm/mat4x4.hpp>
 

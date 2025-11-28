@@ -1,5 +1,6 @@
 #include "meshes.h"
 #include <cmath>
+#include <cstring>
 #include <glm/ext/scalar_constants.hpp>
 
 MeshData generate_triangle_mesh_data() {
