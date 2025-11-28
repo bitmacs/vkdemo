@@ -549,7 +549,7 @@ void cleanup_vk(VkContext *context) {
 void acquire_next_image(VkContext *context, VkSemaphore image_acquired_semaphore, uint32_t *image_index) {
     VkResult result = vkAcquireNextImageKHR(context->device, context->swapchain, UINT64_MAX, image_acquired_semaphore,
                                             VK_NULL_HANDLE, image_index);
-    // assert(result == VK_SUCCESS);
+    assert(result == VK_SUCCESS);
 }
 
 void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore,
@@ -580,7 +580,7 @@ void present(VkContext *context, VkSemaphore wait_semaphore, uint32_t image_inde
     present_info.pImageIndices = &image_index;
 
     VkResult result = vkQueuePresentKHR(context->queue, &present_info);
-    // assert(result == VK_SUCCESS);
+    assert(result == VK_SUCCESS);
 }
 
 void begin_render_pass(VkContext *context, VkCommandBuffer command_buffer, VkRenderPass render_pass,
@@ -667,4 +667,15 @@ void set_scissor(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_
     scissor.extent.width = width;
     scissor.extent.height = height;
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+}
+
+void allocate_descriptor_set(VkContext *context, VkDescriptorPool descriptor_pool, VkDescriptorSet *descriptor_set) {
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
+    descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_allocate_info.descriptorPool = descriptor_pool;
+    descriptor_set_allocate_info.descriptorSetCount = 1;
+    descriptor_set_allocate_info.pSetLayouts = &context->descriptor_set_layout;
+
+    VkResult result = vkAllocateDescriptorSets(context->device, &descriptor_set_allocate_info, descriptor_set);
+    assert(result == VK_SUCCESS);
 }

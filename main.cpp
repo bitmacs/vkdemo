@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "ecs.h"
 #include "frame_context.h"
 #include "meshes.h"
 #include "semaphores.h"
@@ -110,37 +111,12 @@ static void create_descriptor_pools(VkContext *context) {
     }
 }
 
-static void allocate_descriptor_sets(VkContext *context) {
-    descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
-
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
-        descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptor_set_allocate_info.descriptorPool = descriptor_pools[i];
-        descriptor_set_allocate_info.descriptorSetCount = 1;
-        descriptor_set_allocate_info.pSetLayouts = &context->descriptor_set_layout;
-
-        VkResult result = vkAllocateDescriptorSets(context->device, &descriptor_set_allocate_info, &descriptor_sets[i]);
-        assert(result == VK_SUCCESS);
-    }
-}
-
 static void wait_for_frame(VkContext *context, uint32_t frame_index) {
     VkResult result = vkWaitForFences(context->device, 1, &fences[frame_index], VK_TRUE,UINT64_MAX);
     assert(result == VK_SUCCESS);
     result = vkResetFences(context->device, 1, &fences[frame_index]);
     assert(result == VK_SUCCESS);
 }
-
-struct Mesh {
-    MeshBuffersHandle mesh_buffers_handle;
-};
-
-struct Transform {
-    glm::vec3 position;
-    glm::quat orientation;
-    glm::vec3 scale;
-};
 
 TaskSystem task_system = {};
 MeshBuffersRegistry mesh_buffers_registry = {};
@@ -158,7 +134,12 @@ int main() {
     init_vk(&vk_context, window, width, height);
 
     create_descriptor_pools(&vk_context);
-    allocate_descriptor_sets(&vk_context);
+    {
+        descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            allocate_descriptor_set(&vk_context, descriptor_pools[i], &descriptor_sets[i]);
+        }
+    }
     {
         command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
 
