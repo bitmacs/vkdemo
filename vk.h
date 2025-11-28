@@ -4,6 +4,50 @@
 #include <GLFW/glfw3.h>
 #include <glm/vec3.hpp>
 #include <vector>
+#include <unordered_map>
+
+struct PipelineKey {
+    // 位域布局（总共64位）：
+    // [0-4]   primitive_topology (5 bits)
+    // [5-7]   polygon_mode (3 bits)
+
+    // 使用 union 来同时支持位域访问和整体访问
+    union {
+        struct {
+            uint32_t primitive_topology: 5; // bits [0-4]: VkPrimitiveTopology (转换为uint32_t)
+            uint32_t polygon_mode: 3; // bits [5-7]: VkPolygonMode (转换为uint32_t)
+        };
+        uint32_t state_bits; // 低32位状态
+    };
+
+    uint32_t shader_hash_low; // 高32位：shader hash
+
+    void set_primitive_topology(VkPrimitiveTopology topology) {
+        primitive_topology = static_cast<uint32_t>(topology);
+    }
+
+    void set_polygon_mode(VkPolygonMode mode) {
+        polygon_mode = static_cast<uint32_t>(mode);
+    }
+
+    [[nodiscard]] uint64_t to_hash() const {
+        uint64_t hash = 0; // 将状态打包成64位整数
+        hash |= static_cast<uint64_t>(state_bits); // 低32位：状态位域
+        hash |= static_cast<uint64_t>(shader_hash_low) << 32; // 高32位：shader hash
+        return hash;
+    }
+
+    bool operator==(const PipelineKey &other) const {
+        return state_bits == other.state_bits && shader_hash_low == other.shader_hash_low;
+    }
+};
+
+namespace std {
+    template<>
+    struct hash<PipelineKey> {
+        size_t operator()(const PipelineKey &key) const { return key.to_hash(); }
+    };
+}
 
 struct VkContext {
     VkInstance instance;
@@ -24,8 +68,7 @@ struct VkContext {
     std::vector<VkFramebuffer> framebuffers;
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
-    VkPipeline pipeline_solid;
-    VkPipeline pipeline_wireframe;
+    std::unordered_map<PipelineKey, VkPipeline> pipelines;
 };
 
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height);
@@ -61,4 +104,4 @@ void set_scissor(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_
 
 void allocate_descriptor_set(VkContext *context, VkDescriptorPool descriptor_pool, VkDescriptorSet *descriptor_set);
 
-VkPipeline get_pipeline(VkContext *context, VkPolygonMode polygon_mode);
+VkPipeline get_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode);

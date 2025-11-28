@@ -387,7 +387,7 @@ static void create_shader_module(VkContext *context, const char *filepath, VkSha
     assert(result == VK_SUCCESS);
 }
 
-static void create_pipeline(VkContext *context, VkPolygonMode polygon_mode, VkPipeline *pipeline) {
+static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
     VkVertexInputBindingDescription vertex_input_binding_description = {};
     vertex_input_binding_description.binding = 0;
     vertex_input_binding_description.stride = sizeof(Vertex);
@@ -422,7 +422,7 @@ static void create_pipeline(VkContext *context, VkPolygonMode polygon_mode, VkPi
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
     input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly_state_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    input_assembly_state_create_info.topology = primitive_topology;
 
     VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
     rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -500,8 +500,15 @@ static void create_pipeline(VkContext *context, VkPolygonMode polygon_mode, VkPi
     pipeline_create_info.pDynamicState = &dynamic_state_create_info;
     pipeline_create_info.layout = context->pipeline_layout;
     pipeline_create_info.renderPass = context->render_pass;
-    VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr, pipeline);
+
+    VkPipeline pipeline;
+    VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr, &pipeline);
     assert(result == VK_SUCCESS);
+
+    PipelineKey key = {};
+    key.set_primitive_topology(primitive_topology);
+    key.set_polygon_mode(polygon_mode);
+    context->pipelines[key] = pipeline;
 
     vkDestroyShaderModule(context->device, vertex_shader_module, nullptr);
     vkDestroyShaderModule(context->device, fragment_shader_module, nullptr);
@@ -518,13 +525,15 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_framebuffers(context, width, height);
     create_descriptor_set_layout(context);
     create_pipeline_layout(context);
-    create_pipeline(context, VK_POLYGON_MODE_FILL, &context->pipeline_solid);
-    create_pipeline(context, VK_POLYGON_MODE_LINE, &context->pipeline_wireframe);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE);
 }
 
 void cleanup_vk(VkContext *context) {
-    vkDestroyPipeline(context->device, context->pipeline_wireframe, nullptr);
-    vkDestroyPipeline(context->device, context->pipeline_solid, nullptr);
+    for (auto &[_, pipeline]: context->pipelines) {
+        vkDestroyPipeline(context->device, pipeline, nullptr);
+    }
+    context->pipelines.clear();
     vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
     for (size_t i = 0; i < context->framebuffers.size(); ++i) {
@@ -680,6 +689,10 @@ void allocate_descriptor_set(VkContext *context, VkDescriptorPool descriptor_poo
     assert(result == VK_SUCCESS);
 }
 
-VkPipeline get_pipeline(VkContext *context, VkPolygonMode polygon_mode) {
-    return polygon_mode == VK_POLYGON_MODE_FILL ? context->pipeline_solid : context->pipeline_wireframe;
+VkPipeline get_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
+    PipelineKey key = {};
+    key.set_primitive_topology(primitive_topology);
+    key.set_polygon_mode(polygon_mode);
+    if (auto it = context->pipelines.find(key); it != context->pipelines.end()) { return it->second; }
+    assert(false);
 }
