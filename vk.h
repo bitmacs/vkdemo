@@ -65,6 +65,10 @@ struct VkContext {
     std::vector<VkImageView> swapchain_image_views;
     VkCommandPool command_pool;
     VkRenderPass render_pass;
+    VkFormat depth_image_format;
+    std::vector<VkImage> depth_images;
+    std::vector<VkDeviceMemory> depth_image_memories;
+    std::vector<VkImageView> depth_image_views;
     std::vector<VkFramebuffer> framebuffers;
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
@@ -83,7 +87,7 @@ void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait
 void present(VkContext *context, VkSemaphore wait_semaphore, uint32_t image_index);
 
 void begin_render_pass(VkContext *context, VkCommandBuffer command_buffer, VkRenderPass render_pass,
-                       VkFramebuffer framebuffer, uint32_t width, uint32_t height, VkClearValue *clear_value);
+                       VkFramebuffer framebuffer, uint32_t width, uint32_t height, VkClearValue *clear_values, size_t clear_value_count);
 
 void end_render_pass(VkContext *context, VkCommandBuffer command_buffer);
 

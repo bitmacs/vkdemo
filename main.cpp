@@ -286,11 +286,12 @@ int main() {
         vkUnmapMemory(vk_context.device, camera_buffer_memories[frame_index]);
 
         {
-            VkClearValue clear_value = {};
-            clear_value.color = {.float32 = {0.2f, 0.6f, 0.4f, 1.0f}};
+            VkClearValue clear_values[2] = {};
+            clear_values[0].color = {.float32 = {0.2f, 0.6f, 0.4f, 1.0f}};
+            clear_values[1].depthStencil = {.depth = 1.0f, .stencil = 0};
 
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
-                              vk_context.framebuffers[image_index], width, height, &clear_value);
+                              vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
 
             VkPipeline pipeline = get_pipeline(&vk_context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, polygon_mode);
             vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
