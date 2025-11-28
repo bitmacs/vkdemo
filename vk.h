@@ -60,3 +60,5 @@ void set_viewport(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32
 void set_scissor(VkCommandBuffer command_buffer, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
 void allocate_descriptor_set(VkContext *context, VkDescriptorPool descriptor_pool, VkDescriptorSet *descriptor_set);
+
+VkPipeline get_pipeline(VkContext *context, VkPolygonMode polygon_mode);

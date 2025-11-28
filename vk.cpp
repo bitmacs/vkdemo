@@ -679,3 +679,7 @@ void allocate_descriptor_set(VkContext *context, VkDescriptorPool descriptor_poo
     VkResult result = vkAllocateDescriptorSets(context->device, &descriptor_set_allocate_info, descriptor_set);
     assert(result == VK_SUCCESS);
 }
+
+VkPipeline get_pipeline(VkContext *context, VkPolygonMode polygon_mode) {
+    return polygon_mode == VK_POLYGON_MODE_FILL ? context->pipeline_solid : context->pipeline_wireframe;
+}

@@ -280,9 +280,7 @@ int main() {
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
                               vk_context.framebuffers[image_index], width, height, &clear_value);
 
-            VkPipeline pipeline = polygon_mode == VK_POLYGON_MODE_FILL
-                                      ? vk_context.pipeline_solid
-                                      : vk_context.pipeline_wireframe;
+            VkPipeline pipeline = get_pipeline(&vk_context, polygon_mode);
             vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1,
                                     &descriptor_sets[frame_index], 0, nullptr);
