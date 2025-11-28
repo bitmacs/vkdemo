@@ -14,6 +14,52 @@ MeshData generate_triangle_mesh_data() {
     return mesh_data;
 }
 
+MeshData generate_plane_mesh_data(float size, uint32_t segments) {
+    MeshData mesh;
+
+    float step = size / static_cast<float>(segments);
+    float half_size = size * 0.5f;
+
+    // 生成顶点
+    for (uint32_t y = 0; y <= segments; ++y) {
+        for (uint32_t x = 0; x <= segments; ++x) {
+            float x_pos = -half_size + static_cast<float>(x) * step;
+            float z_pos = -half_size + static_cast<float>(y) * step;
+
+            // 使用简单的颜色渐变
+            float r = static_cast<float>(x) / static_cast<float>(segments);
+            float g = static_cast<float>(y) / static_cast<float>(segments);
+
+            mesh.vertices.push_back({
+                glm::vec3(x_pos, 0.0f, z_pos),
+                glm::vec3(r, g, 0.5f)
+            });
+        }
+    }
+
+    // 生成索引
+    for (uint32_t y = 0; y < segments; ++y) {
+        for (uint32_t x = 0; x < segments; ++x) {
+            uint32_t top_left = y * (segments + 1) + x;
+            uint32_t top_right = top_left + 1;
+            uint32_t bottom_left = (y + 1) * (segments + 1) + x;
+            uint32_t bottom_right = bottom_left + 1;
+
+            // 第一个三角形
+            mesh.indices.push_back(top_left);
+            mesh.indices.push_back(bottom_left);
+            mesh.indices.push_back(top_right);
+
+            // 第二个三角形
+            mesh.indices.push_back(top_right);
+            mesh.indices.push_back(bottom_left);
+            mesh.indices.push_back(bottom_right);
+        }
+    }
+
+    return mesh;
+}
+
 bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry,
                                       MeshBuffersHandle mesh_buffers_handle) {
     std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);

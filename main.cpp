@@ -220,6 +220,18 @@ int main() {
         transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
     }
+    {
+        auto entity = registry.create();
+
+        Mesh &mesh = registry.emplace<Mesh>(entity);
+        MeshData mesh_data = generate_plane_mesh_data(1.0f, 10);
+        mesh.mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        Transform &transform = registry.emplace<Transform>(entity);
+        transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
+        transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+    }
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();

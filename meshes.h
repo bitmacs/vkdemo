@@ -18,8 +18,9 @@ struct MeshData {
 };
 
 MeshData generate_triangle_mesh_data();
+MeshData generate_plane_mesh_data(float size, uint32_t segments);
 
-#define MAX_MESH_BUFFERS 1
+#define MAX_MESH_BUFFERS 2
 
 struct MeshBuffers {
     // GPU资源
