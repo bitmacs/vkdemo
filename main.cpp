@@ -72,6 +72,15 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
     }
 }
 
+static void glfw_scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
+    float fov_y_delta = glm::radians(5.0f);
+    float min_fov_y = glm::radians(10.0f);
+    float max_fov_y = glm::radians(120.0f);
+
+    camera.fov_y -= (float) yoffset * fov_y_delta;
+    camera.fov_y = glm::clamp(camera.fov_y, min_fov_y, max_fov_y);
+}
+
 struct CameraData {
     glm::mat4 view;
     glm::mat4 projection;
@@ -130,6 +139,7 @@ int main() {
     int height = 600;
     GLFWwindow *window = glfwCreateWindow(width, height, "VkDemo", nullptr, nullptr);
     glfwSetKeyCallback(window, glfw_key_callback);
+    glfwSetScrollCallback(window, glfw_scroll_callback);
     VkContext vk_context;
     init_vk(&vk_context, window, width, height);
 
