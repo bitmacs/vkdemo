@@ -456,6 +456,10 @@ static void create_shader_module(VkContext *context, const char *filepath, VkSha
 }
 
 static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
+    if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST) {
+        assert(polygon_mode == VK_POLYGON_MODE_LINE);
+    }
+
     VkVertexInputBindingDescription vertex_input_binding_description = {};
     vertex_input_binding_description.binding = 0;
     vertex_input_binding_description.stride = sizeof(Vertex);
@@ -547,7 +551,9 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
     std::vector<VkDynamicState> dynamic_states = {};
     dynamic_states.emplace_back(VK_DYNAMIC_STATE_VIEWPORT);
     dynamic_states.emplace_back(VK_DYNAMIC_STATE_SCISSOR);
-    dynamic_states.emplace_back(VK_DYNAMIC_STATE_CULL_MODE);
+    if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
+        dynamic_states.emplace_back(VK_DYNAMIC_STATE_CULL_MODE);
+    }
 
     VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {};
     dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -573,9 +579,7 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
     VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr, &pipeline);
     assert(result == VK_SUCCESS);
 
-    PipelineKey key = {};
-    key.set_primitive_topology(primitive_topology);
-    key.set_polygon_mode(polygon_mode);
+    PipelineKey key(primitive_topology, polygon_mode);
     context->pipelines[key] = pipeline;
 
     vkDestroyShaderModule(context->device, vertex_shader_module, nullptr);
@@ -596,6 +600,7 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_pipeline_layout(context);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE);
 }
 
 void cleanup_vk(VkContext *context) {
@@ -766,10 +771,14 @@ void allocate_descriptor_set(VkContext *context, VkDescriptorPool descriptor_poo
     assert(result == VK_SUCCESS);
 }
 
-VkPipeline get_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
-    PipelineKey key = {};
-    key.set_primitive_topology(primitive_topology);
-    key.set_polygon_mode(polygon_mode);
-    if (auto it = context->pipelines.find(key); it != context->pipelines.end()) { return it->second; }
+VkPipeline get_pipeline(VkContext *context, PipelineKey pipeline_key) {
+    if (const auto it = context->pipelines.find(pipeline_key); it != context->pipelines.end()) { return it->second; }
     assert(false);
+}
+
+void apply_pipeline_dynamic_states(VkContext *context, VkCommandBuffer command_buffer, PipelineKey pipeline_key,
+                                   VkCullModeFlags cull_mode) {
+    if (pipeline_key.primitive_topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
+        vkCmdSetCullMode(command_buffer, cull_mode);
+    }
 }

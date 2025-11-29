@@ -81,9 +81,11 @@ void decrement_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry
         memset(&entry, 0, sizeof(MeshBuffersEntry)); // zero out the entry
         // raise a task to destroy the mesh buffers
         push_task(task_system, [context, mesh_buffers]() {
-            vkDestroyBuffer(context->device, mesh_buffers.index_buffer, nullptr);
+            if (mesh_buffers.has_indices) {
+                vkDestroyBuffer(context->device, mesh_buffers.index_buffer, nullptr);
+                vkFreeMemory(context->device, mesh_buffers.index_buffer_memory, nullptr);
+            }
             vkDestroyBuffer(context->device, mesh_buffers.vertex_buffer, nullptr);
-            vkFreeMemory(context->device, mesh_buffers.index_buffer_memory, nullptr);
             vkFreeMemory(context->device, mesh_buffers.vertex_buffer_memory, nullptr);
         });
     }
@@ -101,34 +103,37 @@ MeshBuffersHandle request_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registr
                 MeshBuffers mesh_buffers = {};
                 // 创建GPU缓冲区
                 create_buffer(context, sizeof(Vertex) * mesh_data.vertices.size(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &mesh_buffers.vertex_buffer);
-                create_buffer(context, sizeof(uint32_t) * mesh_data.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &mesh_buffers.index_buffer);
 
                 VkMemoryRequirements vertex_buffer_memory_requirements;
-                VkMemoryRequirements index_buffer_memory_requirements;
                 vkGetBufferMemoryRequirements(context->device, mesh_buffers.vertex_buffer, &vertex_buffer_memory_requirements);
-                vkGetBufferMemoryRequirements(context->device, mesh_buffers.index_buffer, &index_buffer_memory_requirements);
                 uint32_t vertex_buffer_memory_type_index = UINT32_MAX;
-                uint32_t index_buffer_memory_type_index = UINT32_MAX;
                 get_memory_type_index(context, vertex_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertex_buffer_memory_type_index);
-                get_memory_type_index(context, index_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &index_buffer_memory_type_index);
-
                 allocate_memory(context, vertex_buffer_memory_requirements.size, vertex_buffer_memory_type_index, &mesh_buffers.vertex_buffer_memory);
-                allocate_memory(context, index_buffer_memory_requirements.size, index_buffer_memory_type_index, &mesh_buffers.index_buffer_memory);
                 void *vertex_buffer_data = nullptr;
-                void *index_buffer_data = nullptr;
                 vkMapMemory(context->device, mesh_buffers.vertex_buffer_memory, 0, sizeof(Vertex) * mesh_data.vertices.size(), 0, &vertex_buffer_data);
-                vkMapMemory(context->device, mesh_buffers.index_buffer_memory, 0, sizeof(uint32_t) * mesh_data.indices.size(), 0, &index_buffer_data);
                 memcpy(vertex_buffer_data, mesh_data.vertices.data(), sizeof(Vertex) * mesh_data.vertices.size());
-                memcpy(index_buffer_data, mesh_data.indices.data(), sizeof(uint32_t) * mesh_data.indices.size());
                 vkUnmapMemory(context->device, mesh_buffers.vertex_buffer_memory);
-                vkUnmapMemory(context->device, mesh_buffers.index_buffer_memory);
                 vkBindBufferMemory(context->device, mesh_buffers.vertex_buffer, mesh_buffers.vertex_buffer_memory, 0);
-                vkBindBufferMemory(context->device, mesh_buffers.index_buffer, mesh_buffers.index_buffer_memory, 0);
 
-                // 保存绘制元数据
-                mesh_buffers.index_count = static_cast<uint32_t>(mesh_data.indices.size());
-                mesh_buffers.vertex_count = static_cast<uint32_t>(mesh_data.vertices.size());
-                mesh_buffers.index_type = VK_INDEX_TYPE_UINT32; // 默认使用uint32索引
+                mesh_buffers.vertex_count = static_cast<uint32_t>(mesh_data.vertices.size()); // 保存绘制元数据
+
+                if (mesh_buffers.has_indices = !mesh_data.indices.empty(); mesh_buffers.has_indices) {
+                    create_buffer(context, sizeof(uint32_t) * mesh_data.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &mesh_buffers.index_buffer);
+
+                    VkMemoryRequirements index_buffer_memory_requirements;
+                    vkGetBufferMemoryRequirements(context->device, mesh_buffers.index_buffer, &index_buffer_memory_requirements);
+                    uint32_t index_buffer_memory_type_index = UINT32_MAX;
+                    get_memory_type_index(context, index_buffer_memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &index_buffer_memory_type_index);
+                    allocate_memory(context, index_buffer_memory_requirements.size, index_buffer_memory_type_index, &mesh_buffers.index_buffer_memory);
+                    void *index_buffer_data = nullptr;
+                    vkMapMemory(context->device, mesh_buffers.index_buffer_memory, 0, sizeof(uint32_t) * mesh_data.indices.size(), 0, &index_buffer_data);
+                    memcpy(index_buffer_data, mesh_data.indices.data(), sizeof(uint32_t) * mesh_data.indices.size());
+                    vkUnmapMemory(context->device, mesh_buffers.index_buffer_memory);
+                    vkBindBufferMemory(context->device, mesh_buffers.index_buffer, mesh_buffers.index_buffer_memory, 0);
+
+                    mesh_buffers.index_count = static_cast<uint32_t>(mesh_data.indices.size());
+                    mesh_buffers.index_type = VK_INDEX_TYPE_UINT32; // 默认使用uint32索引
+                }
                 return mesh_buffers;
             };
             std::function task_callback = [mesh_buffers_registry, i](const MeshBuffers &mesh_buffers) mutable {
@@ -150,10 +155,4 @@ MeshBuffersHandle request_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registr
 void release_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registry, TaskSystem *task_system, VkContext *context,
                           MeshBuffersHandle mesh_buffers_handle) {
     decrement_mesh_buffers_ref_count(mesh_buffers_registry, task_system, context, mesh_buffers_handle);
-}
-
-bool is_mesh_buffers_uploaded(MeshBuffersRegistry *mesh_buffers_registry, MeshBuffersHandle mesh_buffers_handle) {
-    std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);
-    MeshBuffersEntry &entry = mesh_buffers_registry->entries[mesh_buffers_handle];
-    return entry.uploaded;
 }

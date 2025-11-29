@@ -17,6 +17,9 @@
 struct VkDemo {
 };
 
+TaskSystem task_system = {};
+VkContext vk_context = {};
+MeshBuffersRegistry mesh_buffers_registry = {};
 Camera camera = {};
 VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
 VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
@@ -127,9 +130,6 @@ static void wait_for_frame(VkContext *context, uint32_t frame_index) {
     assert(result == VK_SUCCESS);
 }
 
-TaskSystem task_system = {};
-MeshBuffersRegistry mesh_buffers_registry = {};
-
 int main() {
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -142,8 +142,6 @@ int main() {
     glfwSetScrollCallback(window, glfw_scroll_callback);
 
     start(&task_system);
-
-    VkContext vk_context;
     init_vk(&vk_context, window, width, height);
 
     create_descriptor_pools(&vk_context);
@@ -285,6 +283,29 @@ int main() {
         memcpy(ptr, &camera_data, sizeof(CameraData));
         vkUnmapMemory(vk_context.device, camera_buffer_memories[frame_index]);
 
+        struct Renderable {
+            MeshBuffersHandle mesh_buffers_handle;
+            glm::mat4 model;
+        };
+        std::unordered_map<PipelineKey, std::vector<Renderable>> pipeline_renderables;
+        for (auto view = registry.view<Mesh, Transform>(); auto entity: view) {
+            Mesh &mesh = view.get<Mesh>(entity);
+            Transform &transform = view.get<Transform>(entity);
+
+            std::lock_guard lock(mesh_buffers_registry.mutex);
+            MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
+            if (!entry.uploaded) { continue; }
+            frame_contexts[frame_index].mesh_buffers_handles.insert(mesh.mesh_buffers_handle);
+            ++entry.ref_count;
+            PipelineKey pipeline_key(entry.mesh_buffers.has_indices
+                                         ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+                                         : VK_PRIMITIVE_TOPOLOGY_LINE_LIST, polygon_mode);
+            pipeline_renderables[pipeline_key].push_back({
+                .mesh_buffers_handle = mesh.mesh_buffers_handle,
+                .model = glm::mat4(1.0f),
+            });
+        }
+
         {
             VkClearValue clear_values[2] = {};
             clear_values[0].color = {.float32 = {0.2f, 0.6f, 0.4f, 1.0f}};
@@ -293,36 +314,27 @@ int main() {
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
                               vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
 
-            VkPipeline pipeline = get_pipeline(&vk_context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, polygon_mode);
-            vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1,
-                                    &descriptor_sets[frame_index], 0, nullptr);
-            set_viewport(command_buffer, 0, 0, width, height);
-            set_scissor(command_buffer, 0, 0, width, height);
-            vkCmdSetCullMode(command_buffer, cull_mode);
-
-            auto view = registry.view<Mesh, Transform>();
-            for (auto entity: view) {
-                Mesh &mesh = view.get<Mesh>(entity);
-                Transform &transform = view.get<Transform>(entity);
-
-                if (!add_ref(&frame_contexts[frame_index], &mesh_buffers_registry, mesh.mesh_buffers_handle)) {
-                    continue;
-                }
-                if (!is_mesh_buffers_uploaded(&mesh_buffers_registry, mesh.mesh_buffers_handle)) {
-                    continue;
-                }
-
-                MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[mesh.mesh_buffers_handle].mesh_buffers;
-
-                InstanceConstants instance = {};
-                instance.model = glm::mat4(1.0f);
-                vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                                   sizeof(InstanceConstants), &instance);
+            for (const auto &[pipeline_key, renderables]: pipeline_renderables) {
+                VkPipeline pipeline = get_pipeline(&vk_context, pipeline_key);
+                vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1, &descriptor_sets[frame_index], 0, nullptr);
+                set_viewport(command_buffer, 0, 0, width, height);
+                set_scissor(command_buffer, 0, 0, width, height);
+                apply_pipeline_dynamic_states(&vk_context, command_buffer, pipeline_key, cull_mode);
                 VkDeviceSize offsets[] = {0};
-                vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
-                vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
-                vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
+                for (const auto &renderable: renderables) {
+                    MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[renderable.mesh_buffers_handle].mesh_buffers;
+                    InstanceConstants instance = {};
+                    instance.model = renderable.model;
+                    vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
+                    vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
+                    if (mesh_buffers.has_indices) {
+                        vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
+                        vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
+                    } else {
+                        vkCmdDraw(command_buffer, mesh_buffers.vertex_count, 1, 0, 0);
+                    }
+                }
             }
 
             end_render_pass(&vk_context, command_buffer);

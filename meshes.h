@@ -30,9 +30,10 @@ struct MeshBuffers {
     VkDeviceMemory index_buffer_memory;
 
     // 绘制元数据（从Mesh创建时保存，用于绘制命令）
-    uint32_t index_count; // 索引数量，用于vkCmdDrawIndexed
     uint32_t vertex_count; // 顶点数量，用于vkCmdDraw（非索引绘制）
-    VkIndexType index_type; // 索引类型，默认为VK_INDEX_TYPE_UINT32
+    bool has_indices; // 是否使用索引绘制
+    uint32_t index_count; // 索引数量，用于vkCmdDrawIndexed
+    VkIndexType index_type;
 };
 
 typedef uint32_t MeshBuffersHandle;
@@ -52,7 +53,6 @@ bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry
                                       MeshBuffersHandle mesh_buffers_handle);
 void decrement_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry, TaskSystem *task_system,
                                       VkContext *context, MeshBuffersHandle mesh_buffers_handle);
-bool is_mesh_buffers_uploaded(MeshBuffersRegistry *mesh_buffers_registry, MeshBuffersHandle mesh_buffers_handle);
 MeshBuffersHandle request_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registry, TaskSystem *task_system,
                                        VkContext *context, MeshData &&mesh_data);
 void release_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registry, TaskSystem *task_system, VkContext *context,
