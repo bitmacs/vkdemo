@@ -60,6 +60,12 @@ MeshData generate_plane_mesh_data(float size, uint32_t segments) {
     return mesh;
 }
 
+MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end) {
+    MeshData mesh;
+    mesh.vertices = {{start, glm::vec3(1.0f, 1.0f, 1.0f)}, {end, glm::vec3(1.0f, 1.0f, 1.0f)}};
+    return mesh;
+}
+
 bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry,
                                       MeshBuffersHandle mesh_buffers_handle) {
     std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);
@@ -81,7 +87,7 @@ void decrement_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry
         memset(&entry, 0, sizeof(MeshBuffersEntry)); // zero out the entry
         // raise a task to destroy the mesh buffers
         push_task(task_system, [context, mesh_buffers]() {
-            if (mesh_buffers.has_indices) {
+            if (mesh_buffers.index_count > 0) {
                 vkDestroyBuffer(context->device, mesh_buffers.index_buffer, nullptr);
                 vkFreeMemory(context->device, mesh_buffers.index_buffer_memory, nullptr);
             }
@@ -117,7 +123,7 @@ MeshBuffersHandle request_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registr
 
                 mesh_buffers.vertex_count = static_cast<uint32_t>(mesh_data.vertices.size()); // 保存绘制元数据
 
-                if (mesh_buffers.has_indices = !mesh_data.indices.empty(); mesh_buffers.has_indices) {
+                if (!mesh_data.indices.empty()) {
                     create_buffer(context, sizeof(uint32_t) * mesh_data.indices.size(), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &mesh_buffers.index_buffer);
 
                     VkMemoryRequirements index_buffer_memory_requirements;

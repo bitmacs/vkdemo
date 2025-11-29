@@ -19,8 +19,9 @@ struct MeshData {
 
 MeshData generate_triangle_mesh_data();
 MeshData generate_plane_mesh_data(float size, uint32_t segments);
+MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end);
 
-#define MAX_MESH_BUFFERS 2
+#define MAX_MESH_BUFFERS 10
 
 struct MeshBuffers {
     // GPU资源
@@ -31,7 +32,6 @@ struct MeshBuffers {
 
     // 绘制元数据（从Mesh创建时保存，用于绘制命令）
     uint32_t vertex_count; // 顶点数量，用于vkCmdDraw（非索引绘制）
-    bool has_indices; // 是否使用索引绘制
     uint32_t index_count; // 索引数量，用于vkCmdDrawIndexed
     VkIndexType index_type;
 };

@@ -84,6 +84,33 @@ static void glfw_scroll_callback(GLFWwindow *window, double xoffset, double yoff
     camera.fov_y = glm::clamp(camera.fov_y, min_fov_y, max_fov_y);
 }
 
+static void glfw_mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+        int width, height;
+        glfwGetWindowSize(window, &width, &height);
+
+        double x, y;
+        glfwGetCursorPos(window, &x, &y);
+
+        auto [ray_origin, ray_dir] = compute_ray_from_screen(camera, (float) x, (float) y, (float) width,
+                                                             (float) height);
+
+        // 计算射线与远平面的交点
+        glm::vec3 far_plane_intersection = compute_ray_far_plane_intersection(camera, ray_origin, ray_dir);
+
+        auto entity = registry.create();
+
+        Mesh &mesh = registry.emplace<Mesh>(entity);
+        MeshData mesh_data = generate_line_mesh_data(ray_origin, far_plane_intersection);
+        mesh.mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        Transform &transform = registry.emplace<Transform>(entity);
+        transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
+        transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+    }
+}
+
 struct CameraData {
     glm::mat4 view;
     glm::mat4 projection;
@@ -130,6 +157,11 @@ static void wait_for_frame(VkContext *context, uint32_t frame_index) {
     assert(result == VK_SUCCESS);
 }
 
+struct Renderable {
+    MeshBuffersHandle mesh_buffers_handle;
+    glm::mat4 model_matrix;
+};
+
 int main() {
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
@@ -140,6 +172,7 @@ int main() {
     GLFWwindow *window = glfwCreateWindow(width, height, "VkDemo", nullptr, nullptr);
     glfwSetKeyCallback(window, glfw_key_callback);
     glfwSetScrollCallback(window, glfw_scroll_callback);
+    glfwSetMouseButtonCallback(window, glfw_mouse_button_callback);
 
     start(&task_system);
     init_vk(&vk_context, window, width, height);
@@ -246,9 +279,6 @@ int main() {
         }
         image_acquired_semaphores[image_index] = image_acquired_semaphore;
 
-        VkCommandBuffer command_buffer = command_buffers[frame_index];
-        begin_command_buffer(&vk_context, command_buffer);
-
         VkDescriptorBufferInfo descriptor_buffer_info = {};
         descriptor_buffer_info.buffer = camera_buffers[frame_index];
         descriptor_buffer_info.offset = 0;
@@ -283,10 +313,6 @@ int main() {
         memcpy(ptr, &camera_data, sizeof(CameraData));
         vkUnmapMemory(vk_context.device, camera_buffer_memories[frame_index]);
 
-        struct Renderable {
-            MeshBuffersHandle mesh_buffers_handle;
-            glm::mat4 model;
-        };
         std::unordered_map<PipelineKey, std::vector<Renderable>> pipeline_renderables;
         for (auto view = registry.view<Mesh, Transform>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
@@ -297,14 +323,22 @@ int main() {
             if (!entry.uploaded) { continue; }
             frame_contexts[frame_index].mesh_buffers_handles.insert(mesh.mesh_buffers_handle);
             ++entry.ref_count;
-            PipelineKey pipeline_key(entry.mesh_buffers.has_indices
-                                         ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-                                         : VK_PRIMITIVE_TOPOLOGY_LINE_LIST, polygon_mode);
+            VkPrimitiveTopology pipeline_primitive_topology = entry.mesh_buffers.index_count > 0
+                                                                  ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+                                                                  : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            VkPolygonMode pipeline_polygon_mode = polygon_mode;
+            if (pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST) {
+                pipeline_polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list
+            }
+            PipelineKey pipeline_key(pipeline_primitive_topology, pipeline_polygon_mode);
             pipeline_renderables[pipeline_key].push_back({
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
-                .model = glm::mat4(1.0f),
+                .model_matrix = glm::mat4(1.0f),
             });
         }
+
+        VkCommandBuffer command_buffer = command_buffers[frame_index];
+        begin_command_buffer(&vk_context, command_buffer);
 
         {
             VkClearValue clear_values[2] = {};
@@ -325,10 +359,10 @@ int main() {
                 for (const auto &renderable: renderables) {
                     MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[renderable.mesh_buffers_handle].mesh_buffers;
                     InstanceConstants instance = {};
-                    instance.model = renderable.model;
+                    instance.model = renderable.model_matrix;
                     vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
                     vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
-                    if (mesh_buffers.has_indices) {
+                    if (mesh_buffers.index_count > 0) {
                         vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
                         vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
                     } else {
