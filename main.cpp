@@ -12,6 +12,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <Jolt/Jolt.h>
+#include <Jolt/Core/Factory.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/Shape/TriangleShape.h>
+#include <Jolt/RegisterTypes.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -93,21 +98,46 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
         double x, y;
         glfwGetCursorPos(window, &x, &y);
 
-        auto [ray_origin, ray_dir] = compute_ray_from_screen(camera, (float) x, (float) y, (float) width,
-                                                             (float) height);
+        auto [origin, dir] = compute_ray_from_screen(camera, (float) x, (float) y, (float) width, (float) height);
 
-        glm::vec3 far_plane_intersection = compute_ray_far_plane_intersection(camera, ray_origin, ray_dir);
+        glm::vec3 far_plane_intersection = compute_ray_far_plane_intersection(camera, origin, dir);
 
         auto entity = registry.create();
 
         Mesh &mesh = registry.emplace<Mesh>(entity);
-        MeshData mesh_data = generate_line_mesh_data(ray_origin, far_plane_intersection);
+        MeshData mesh_data = generate_line_mesh_data(origin, far_plane_intersection);
         mesh.mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
 
         Transform &transform = registry.emplace<Transform>(entity);
         transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
         transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        {
+            // 创建一个三角形（三个顶点，逆时针顺序）
+            JPH::Vec3 v1(-0.5f, -0.5f, 0.0f);
+            JPH::Vec3 v2( 0.5f, -0.5f, 0.0f);
+            JPH::Vec3 v3( 0.0f,  0.5f, 0.0f);
+            JPH::RefConst triangle = new JPH::TriangleShape(v1, v2, v3);
+
+            JPH::Vec3 ray_origin(origin.x, origin.y, origin.z);
+            JPH::Vec3 ray_direction(dir.x, dir.y, dir.z);
+            JPH::RayCast ray(ray_origin, ray_direction);
+
+            // 执行 ray cast
+            JPH::SubShapeIDCreator sub_shape_id_creator;
+            JPH::RayCastResult hit;
+            hit.mFraction = 100.0f; // 初始化为最大距离
+
+            if (triangle->CastRay(ray, sub_shape_id_creator, hit)) {
+                JPH::Vec3 hit_point = ray.GetPointOnRay(hit.mFraction);
+                std::cout << "命中三角形" << std::endl;
+                std::cout << "  命中点: (" << hit_point.GetX() << ", " << hit_point.GetY() << ", " << hit_point.GetZ() << ")" << std::endl;
+                std::cout << "  距离分数: " << hit.mFraction << std::endl;
+            } else {
+                std::cout << "未命中三角形" << std::endl;
+            }
+        }
     }
 }
 
@@ -163,6 +193,9 @@ struct Renderable {
 };
 
 int main() {
+    JPH::RegisterDefaultAllocator();
+    JPH::Factory::sInstance = new JPH::Factory();
+    JPH::RegisterTypes();
     glfwSetErrorCallback(glfw_error_callback);
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -432,5 +465,8 @@ int main() {
     cleanup_vk(&vk_context);
     glfwDestroyWindow(window);
     glfwTerminate();
+    JPH::UnregisterTypes();
+    delete JPH::Factory::sInstance;
+    JPH::Factory::sInstance = nullptr;
     return 0;
 }
