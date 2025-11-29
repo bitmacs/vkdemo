@@ -11,6 +11,7 @@
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <Jolt/Jolt.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -95,7 +96,6 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
         auto [ray_origin, ray_dir] = compute_ray_from_screen(camera, (float) x, (float) y, (float) width,
                                                              (float) height);
 
-        // 计算射线与远平面的交点
         glm::vec3 far_plane_intersection = compute_ray_far_plane_intersection(camera, ray_origin, ray_dir);
 
         auto entity = registry.create();
@@ -328,7 +328,7 @@ int main() {
                                                                   : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
             VkPolygonMode pipeline_polygon_mode = polygon_mode;
             if (pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST) {
-                pipeline_polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list
+                pipeline_polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list topology
             }
             PipelineKey pipeline_key(pipeline_primitive_topology, pipeline_polygon_mode);
             pipeline_renderables[pipeline_key].push_back({

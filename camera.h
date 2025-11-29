@@ -17,5 +17,6 @@ glm::mat4 compute_projection_matrix(const Camera &camera);
 
 std::pair<glm::vec3, glm::vec3> compute_ray_from_screen(const Camera &camera, float x, float y, float width,
                                                         float height);
+// 计算射线与远平面的交点
 glm::vec3 compute_ray_far_plane_intersection(const Camera &camera, const glm::vec3 &ray_origin,
                                              const glm::vec3 &ray_dir);

@@ -7,3 +7,6 @@
 [submodule "external/entt"]
 	path = external/entt
 	url = git@github.com:skypjack/entt.git
+[submodule "external/JoltPhysics"]
+	path = external/JoltPhysics
+	url = git@github.com:jrouwe/JoltPhysics.git
