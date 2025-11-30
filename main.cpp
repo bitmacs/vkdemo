@@ -356,12 +356,11 @@ int main() {
             if (!entry.uploaded) { continue; }
             frame_contexts[frame_index].mesh_buffers_handles.insert(mesh.mesh_buffers_handle);
             ++entry.ref_count;
-            VkPrimitiveTopology pipeline_primitive_topology = entry.mesh_buffers.index_count > 0
-                                                                  ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-                                                                  : VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+            VkPrimitiveTopology pipeline_primitive_topology = entry.mesh_buffers.primitive_topology;
             VkPolygonMode pipeline_polygon_mode = polygon_mode;
-            if (pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST) {
-                pipeline_polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list topology
+            if (pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
+                pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
+                pipeline_polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list or line strip topology
             }
             PipelineKey pipeline_key(pipeline_primitive_topology, pipeline_polygon_mode);
             pipeline_renderables[pipeline_key].push_back({

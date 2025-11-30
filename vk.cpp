@@ -456,8 +456,9 @@ static void create_shader_module(VkContext *context, const char *filepath, VkSha
 }
 
 static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
-    if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST) {
-        assert(polygon_mode == VK_POLYGON_MODE_LINE);
+    if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
+        primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
+        assert(polygon_mode == VK_POLYGON_MODE_LINE); // polygon mode must be line for line list or line strip topology
     }
 
     VkVertexInputBindingDescription vertex_input_binding_description = {};
@@ -495,6 +496,9 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_create_info = {};
     input_assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     input_assembly_state_create_info.topology = primitive_topology;
+    if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
+        input_assembly_state_create_info.primitiveRestartEnable = VK_TRUE;
+    }
 
     VkPipelineRasterizationStateCreateInfo rasterization_state_create_info = {};
     rasterization_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -601,6 +605,7 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE);
 }
 
 void cleanup_vk(VkContext *context) {

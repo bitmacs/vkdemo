@@ -15,6 +15,7 @@ struct Vertex {
 struct MeshData {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    VkPrimitiveTopology primitive_topology;
 };
 
 MeshData generate_triangle_mesh_data();
@@ -34,6 +35,7 @@ struct MeshBuffers {
     uint32_t vertex_count; // 顶点数量，用于vkCmdDraw（非索引绘制）
     uint32_t index_count; // 索引数量，用于vkCmdDrawIndexed
     VkIndexType index_type;
+    VkPrimitiveTopology primitive_topology;
 };
 
 typedef uint32_t MeshBuffersHandle;

@@ -11,6 +11,7 @@ MeshData generate_triangle_mesh_data() {
         {glm::vec3( 0.0f,  0.5f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)},
     };
     mesh_data.indices = {0, 1, 2};
+    mesh_data.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     return mesh_data;
 }
 
@@ -57,12 +58,14 @@ MeshData generate_plane_mesh_data(float size, uint32_t segments) {
         }
     }
 
+    mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     return mesh;
 }
 
 MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end) {
     MeshData mesh;
     mesh.vertices = {{start, glm::vec3(1.0f, 1.0f, 1.0f)}, {end, glm::vec3(1.0f, 1.0f, 1.0f)}};
+    mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     return mesh;
 }
 
@@ -140,6 +143,7 @@ MeshBuffersHandle request_mesh_buffers(MeshBuffersRegistry *mesh_buffers_registr
                     mesh_buffers.index_count = static_cast<uint32_t>(mesh_data.indices.size());
                     mesh_buffers.index_type = VK_INDEX_TYPE_UINT32; // 默认使用uint32索引
                 }
+                mesh_buffers.primitive_topology = mesh_data.primitive_topology;
                 return mesh_buffers;
             };
             std::function task_callback = [mesh_buffers_registry, i](const MeshBuffers &mesh_buffers) mutable {
