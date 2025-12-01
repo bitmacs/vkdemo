@@ -380,6 +380,18 @@ int main() {
                 .model_matrix = glm::mat4(1.0f),
             });
         }
+        std::vector<PipelineKey> render_order = {
+            {VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL},
+            {VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE},
+            {VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE},
+            {VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE},
+        };
+        std::vector<std::pair<PipelineKey, std::vector<Renderable>>> sorted_pipeline_renderables;
+        for (const auto &pipeline_key: render_order) {
+            if (const auto it = pipeline_renderables.find(pipeline_key); it != pipeline_renderables.end()) {
+                sorted_pipeline_renderables.emplace_back(pipeline_key, std::move(it->second));
+            }
+        }
 
         VkCommandBuffer command_buffer = command_buffers[frame_index];
         begin_command_buffer(&vk_context, command_buffer);
@@ -392,7 +404,7 @@ int main() {
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
                               vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
 
-            for (const auto &[pipeline_key, renderables]: pipeline_renderables) {
+            for (const auto &[pipeline_key, renderables]: sorted_pipeline_renderables) {
                 VkPipeline pipeline = get_pipeline(&vk_context, pipeline_key);
                 vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
                 vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1, &descriptor_sets[frame_index], 0, nullptr);
