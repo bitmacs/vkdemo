@@ -22,6 +22,8 @@ MeshData generate_triangle_mesh_data();
 MeshData generate_plane_mesh_data(float size, uint32_t segments);
 MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end);
 
+MeshData generate_ring_mesh_data(float radius, uint32_t segments);
+
 #define MAX_MESH_BUFFERS 10
 
 struct MeshBuffers {

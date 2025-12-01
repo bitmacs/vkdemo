@@ -69,6 +69,24 @@ MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end) {
     return mesh;
 }
 
+MeshData generate_ring_mesh_data(float radius, uint32_t segments) {
+    MeshData mesh;
+
+    float angle_step = 2.0f * glm::pi<float>() / static_cast<float>(segments);
+    glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+
+    // 绘制圆环
+    for (uint32_t i = 0; i <= segments; ++i) {
+        float angle = (float) i * angle_step;
+        float cos_a = std::cos(angle);
+        float sin_a = std::sin(angle);
+        mesh.vertices.push_back({glm::vec3(radius * cos_a, 0.0f, radius * sin_a), color});
+    }
+
+    mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+    return mesh;
+}
+
 bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry,
                                       MeshBuffersHandle mesh_buffers_handle) {
     std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);
