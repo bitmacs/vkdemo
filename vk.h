@@ -9,11 +9,11 @@
 struct PipelineKey {
     // 位域布局（总共64位）：
     // [0-4]   primitive_topology (5 bits)
-    // [5-7]   polygon_mode (3 bits)
+    // [5-6]   polygon_mode (2 bits)
     union {
         struct {
             uint32_t primitive_topology: 5; // bits [0-4]: VkPrimitiveTopology (转换为uint32_t)
-            uint32_t polygon_mode: 3; // bits [5-7]: VkPolygonMode (转换为uint32_t)
+            uint32_t polygon_mode: 2; // bits [5-6]: VK_POLYGON_MODE_FILL, LINE
         };
         uint32_t state_bits; // 低32位状态
     };
@@ -25,24 +25,19 @@ struct PipelineKey {
         polygon_mode = static_cast<uint32_t>(mode);
     }
 
-    [[nodiscard]] uint64_t to_hash() const {
-        uint64_t hash = 0; // 将状态打包成64位整数
-        hash |= static_cast<uint64_t>(state_bits); // 低32位：状态位域
-        hash |= static_cast<uint64_t>(shader_hash) << 32; // 高32位：shader hash
-        return hash;
-    }
-
     bool operator==(const PipelineKey &other) const {
         return state_bits == other.state_bits && shader_hash == other.shader_hash;
     }
 };
 
-namespace std {
-    template<>
-    struct hash<PipelineKey> {
-        size_t operator()(const PipelineKey &key) const { return key.to_hash(); }
-    };
-}
+struct PipelineKeyHash {
+    size_t operator()(const PipelineKey &key) const {
+        uint64_t hash = 0; // 将状态打包成64位整数
+        hash |= static_cast<uint64_t>(key.state_bits); // 低32位：状态位域
+        hash |= static_cast<uint64_t>(key.shader_hash) << 32; // 高32位：shader hash
+        return hash;
+    }
+};
 
 struct VkContext {
     VkInstance instance;
@@ -67,7 +62,7 @@ struct VkContext {
     std::vector<VkFramebuffer> framebuffers;
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
-    std::unordered_map<PipelineKey, VkPipeline> pipelines;
+    std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> pipelines;
 };
 
 void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height);

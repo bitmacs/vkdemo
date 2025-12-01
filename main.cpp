@@ -18,6 +18,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/TriangleShape.h>
 #include <Jolt/RegisterTypes.h>
+#include <iostream>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -173,7 +174,7 @@ static void create_descriptor_pools(VkContext *context) {
     descriptor_pools.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkDescriptorPoolSize descriptor_pool_sizes[] = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}, // camera buffer
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
     };
 
@@ -357,7 +358,7 @@ int main() {
         memcpy(ptr, &camera_data, sizeof(CameraData));
         vkUnmapMemory(vk_context.device, camera_buffer_memories[frame_index]);
 
-        std::unordered_map<PipelineKey, std::vector<Renderable>> pipeline_renderables;
+        std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash> pipeline_renderables;
         for (auto view = registry.view<Mesh, Transform>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform &transform = view.get<Transform>(entity);
