@@ -14,6 +14,7 @@ add_subdirectory(external/glm)
 add_subdirectory(external/entt)
 add_subdirectory(external/JoltPhysics/Build)
 
-add_executable(vkdemo main.cpp file.cpp vk.cpp camera.cpp meshes.cpp tasks.cpp semaphores.cpp frame_context.cpp)
+add_executable(vkdemo main.cpp file.cpp vk.cpp camera.cpp meshes.cpp tasks.cpp semaphores.cpp frame_context.cpp
+    raycast.cpp)
 target_link_libraries(vkdemo PRIVATE Vulkan::Vulkan glfw glm EnTT Jolt)
 target_compile_definitions(vkdemo PRIVATE GLFW_INCLUDE_NONE)

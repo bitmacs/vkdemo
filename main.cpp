@@ -2,6 +2,7 @@
 #include "ecs.h"
 #include "frame_context.h"
 #include "meshes.h"
+#include "raycast.h"
 #include "semaphores.h"
 #include "tasks.h"
 #include "vk.h"
@@ -136,6 +137,16 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
                 std::cout << "  距离分数: " << hit.mFraction << std::endl;
             } else {
                 std::cout << "未命中三角形" << std::endl;
+            }
+        }
+
+        {
+            std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
+            if (distance) {
+                std::cout << "命中圆环" << std::endl;
+                std::cout << "  距离: " << *distance << std::endl;
+            } else {
+                std::cout << "未命中圆环" << std::endl;
             }
         }
     }
