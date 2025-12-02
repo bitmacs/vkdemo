@@ -126,6 +126,9 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
         transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+
         {
             // 创建一个三角形（三个顶点，逆时针顺序）
             JPH::Vec3 v1(-0.5f, -0.5f, 0.0f);
@@ -243,7 +246,7 @@ int main() {
         std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
         if (distance) {
             if (glm::abs(*distance - 1.0f) < 0.1f) {
-                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 0.0f, 0.0f); // set ring color to red
+                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f); // set ring color to red
             } else {
                 registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
             }
@@ -326,6 +329,9 @@ int main() {
         transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
         transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 1.0f, 1.0f);
     }
     {
         auto entity = registry.create();
@@ -338,6 +344,9 @@ int main() {
         transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
         transform.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 1.0f, 1.0f);
     }
     {
         auto entity = registry.create();

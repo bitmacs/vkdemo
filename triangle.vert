@@ -19,5 +19,5 @@ layout (location = 0) out VS_OUT {
 
 void main() {
     gl_Position = camera_ubo.projection * camera_ubo.view * instance.model * vec4(position, 1.0);
-    vs_out.color = instance.color;
+    vs_out.color = color * instance.color;
 }
