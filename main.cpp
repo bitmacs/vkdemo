@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "ecs.h"
+#include "events.h"
 #include "frame_context.h"
 #include "inputs.h"
 #include "meshes.h"
@@ -26,8 +27,9 @@
 struct VkDemo {
 };
 
-TaskSystem task_system = {};
 Inputs inputs = {};
+Events events = {};
+TaskSystem task_system = {};
 VkContext vk_context = {};
 MeshBuffersRegistry mesh_buffers_registry = {};
 Camera camera = {};
@@ -92,6 +94,13 @@ static void glfw_scroll_callback(GLFWwindow *window, double xoffset, double yoff
 
     camera.fov_y -= (float) yoffset * fov_y_delta;
     camera.fov_y = glm::clamp(camera.fov_y, min_fov_y, max_fov_y);
+}
+
+static void glfw_cursor_pos_callback(GLFWwindow *window, double xpos, double ypos) {
+    float x = (float) xpos;
+    float y = (float) ypos;
+    move_mouse(&inputs, x, y);
+    dispatch_event(&events, EVENT_CODE_MOUSE_MOVE, EventData{.f32 = {x, y}});
 }
 
 static void glfw_mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
@@ -160,10 +169,6 @@ struct CameraData {
     glm::mat4 projection;
 };
 
-struct InstanceConstants {
-    glm::mat4 model;
-};
-
 std::vector<VkFence> fences = {}; // each frame has a fence
 std::vector<VkSemaphore> image_acquired_semaphores = {}; // each swapchain image has a image acquired semaphore
 std::vector<VkSemaphore> render_complete_semaphores = {}; // each swapchain image has a render complete semaphore
@@ -204,7 +209,10 @@ static void wait_for_frame(VkContext *context, uint32_t frame_index) {
 struct Renderable {
     MeshBuffersHandle mesh_buffers_handle;
     glm::mat4 model_matrix;
+    glm::vec3 color;
 };
+
+entt::entity gizmo_y_ring_entity = entt::null;
 
 int main() {
     JPH::RegisterDefaultAllocator();
@@ -220,10 +228,30 @@ int main() {
     glfwSetKeyCallback(window, glfw_key_callback);
     glfwSetScrollCallback(window, glfw_scroll_callback);
     glfwSetMouseButtonCallback(window, glfw_mouse_button_callback);
+    glfwSetCursorPosCallback(window, glfw_cursor_pos_callback);
 
-    start(&task_system);
     init_inputs(&inputs);
+    start(&task_system);
     init_vk(&vk_context, window, width, height);
+
+    register_event_handler(&events, EVENT_CODE_MOUSE_MOVE, [width, height](const EventData &event_data)-> bool {
+        float x = event_data.f32[0];
+        float y = event_data.f32[1];
+        auto [origin, dir] = compute_ray_from_screen(camera, x, y, width, height);
+
+        // 检测是否在 gizmo 范围内
+        std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
+        if (distance) {
+            if (glm::abs(*distance - 1.0f) < 0.1f) {
+                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 0.0f, 0.0f); // set ring color to red
+            } else {
+                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
+            }
+        } else {
+            registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
+        }
+        return true;
+    });
 
     create_descriptor_pools(&vk_context);
     {
@@ -322,6 +350,11 @@ int main() {
         position = glm::vec3(0.0f, 0.0f, 0.0f);
         orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        gizmo_y_ring_entity = entity;
     }
 
     while (!glfwWindowShouldClose(window)) {
@@ -375,7 +408,7 @@ int main() {
         vkUnmapMemory(vk_context.device, camera_buffer_memories[frame_index]);
 
         std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash> pipeline_renderables;
-        for (auto view = registry.view<Mesh, Transform>(); auto entity: view) {
+        for (auto view = registry.view<Mesh, Transform, Material>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform &transform = view.get<Transform>(entity);
 
@@ -394,6 +427,7 @@ int main() {
             pipeline_renderables[pipeline_key].push_back({
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
                 .model_matrix = glm::mat4(1.0f),
+                .color = registry.get<Material>(entity).color,
             });
         }
         std::vector<PipelineKey> render_order = {
@@ -432,6 +466,7 @@ int main() {
                     MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[renderable.mesh_buffers_handle].mesh_buffers;
                     InstanceConstants instance = {};
                     instance.model = renderable.model_matrix;
+                    instance.color = renderable.color;
                     vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
                     vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
                     if (mesh_buffers.index_count > 0) {

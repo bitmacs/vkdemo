@@ -427,11 +427,11 @@ static void create_descriptor_set_layout(VkContext *context) {
     assert(result == VK_SUCCESS);
 }
 
-static void create_pipeline_layout(VkContext *context) {
+static void create_pipeline_layout(VkContext *context, size_t push_constant_size) {
     VkPushConstantRange push_constant_range = {};
     push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     push_constant_range.offset = 0;
-    push_constant_range.size = sizeof(glm::mat4);
+    push_constant_range.size = push_constant_size;
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info = {};
     pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -601,7 +601,7 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_framebuffers(context, width, height);
     create_command_pool(context);
     create_descriptor_set_layout(context);
-    create_pipeline_layout(context);
+    create_pipeline_layout(context, sizeof(InstanceConstants));
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE);

@@ -9,13 +9,12 @@ glm::mat4 compute_projection_matrix(const Camera &camera) {
     return glm::perspective(camera.fov_y, camera.aspect_ratio, camera.z_near, camera.z_far);
 }
 
-std::pair<glm::vec3, glm::vec3> compute_ray_from_screen(const Camera &camera, float x, float y, float width,
-                                                        float height) {
+std::pair<glm::vec3, glm::vec3> compute_ray_from_screen(const Camera &camera, float x, float y, int width, int height) {
     // 1 将屏幕坐标转换为 NDC
     // Vulkan NDC: x, y 范围是 [-1, 1]，原点在中心，y 轴向上
     // 屏幕坐标: 原点在左上角，y 轴向下
-    float ndc_x = (2.0f * x / width) - 1.0f;
-    float ndc_y = 1.0f - (2.0f * y / height); // 翻转 y 轴
+    float ndc_x = (2.0f * x / (float) width) - 1.0f;
+    float ndc_y = 1.0f - (2.0f * y / (float) height); // 翻转 y 轴
 
     // 2 创建近平面和远平面的 NDC 点
     glm::vec4 near_point_ndc(ndc_x, ndc_y, 0.0f, 1.0f); // z = 0 (近平面)

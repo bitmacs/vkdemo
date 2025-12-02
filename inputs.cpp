@@ -15,3 +15,7 @@ void begin_inputs_frame(Inputs *inputs) {
     inputs->prev_mouse_pos = inputs->mouse_pos;
     inputs->mouse_scroll_delta = glm::vec2(0.0f);
 }
+
+void move_mouse(Inputs *inputs, float x, float y) {
+    inputs->mouse_pos = glm::vec2(x, y);
+}

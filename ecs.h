@@ -11,3 +11,7 @@ struct Transform {
     glm::quat orientation;
     glm::vec3 scale;
 };
+
+struct Material {
+    glm::vec3 color;
+};

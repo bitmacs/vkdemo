@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 #include <vector>
 #include <unordered_map>
@@ -37,6 +38,11 @@ struct PipelineKeyHash {
         hash |= static_cast<uint64_t>(key.shader_hash) << 32; // 高32位：shader hash
         return hash;
     }
+};
+
+struct InstanceConstants {
+    glm::mat4 model;
+    glm::vec3 color;
 };
 
 struct VkContext {

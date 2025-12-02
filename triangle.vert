@@ -10,6 +10,7 @@ layout (set = 0, binding = 0, std140) uniform CameraUBO {
 
 layout (push_constant) uniform InstanceConstants {
     mat4 model;
+    vec3 color;
 } instance;
 
 layout (location = 0) out VS_OUT {
@@ -18,5 +19,5 @@ layout (location = 0) out VS_OUT {
 
 void main() {
     gl_Position = camera_ubo.projection * camera_ubo.view * instance.model * vec4(position, 1.0);
-    vs_out.color = color;
+    vs_out.color = instance.color;
 }
