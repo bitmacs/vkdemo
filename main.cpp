@@ -1,6 +1,7 @@
 #include "camera.h"
 #include "ecs.h"
 #include "frame_context.h"
+#include "inputs.h"
 #include "meshes.h"
 #include "raycast.h"
 #include "semaphores.h"
@@ -26,6 +27,7 @@ struct VkDemo {
 };
 
 TaskSystem task_system = {};
+Inputs inputs = {};
 VkContext vk_context = {};
 MeshBuffersRegistry mesh_buffers_registry = {};
 Camera camera = {};
@@ -220,6 +222,7 @@ int main() {
     glfwSetMouseButtonCallback(window, glfw_mouse_button_callback);
 
     start(&task_system);
+    init_inputs(&inputs);
     init_vk(&vk_context, window, width, height);
 
     create_descriptor_pools(&vk_context);
@@ -322,6 +325,7 @@ int main() {
     }
 
     while (!glfwWindowShouldClose(window)) {
+        begin_inputs_frame(&inputs);
         glfwPollEvents();
 
         wait_for_frame(&vk_context, frame_index);
@@ -465,6 +469,7 @@ int main() {
         release_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, mesh.mesh_buffers_handle);
     }
     registry.clear();
+    shutdown_inputs(&inputs);
     stop(&task_system);
     for (uint32_t i = 0; i < vk_context.swapchain_image_count; ++i) {
         if (render_complete_semaphores[i] != VK_NULL_HANDLE) {
