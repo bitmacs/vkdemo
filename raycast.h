@@ -16,5 +16,20 @@ struct Ring {
     float radius;     // 圆环半径
 };
 
+// 圆柱曲面（Cylinder）结构 - 不包含顶部与底部的圆柱侧面
+struct Cylinder {
+    glm::vec3 base_center; // 底部中心点
+    glm::vec3 axis;        // 轴向（已归一化，从底部指向顶部）
+    float radius;          // 圆柱半径
+    float height;          // 圆柱高度
+};
+
+struct RayCylinderHit {
+    float t;             // 射线参数 t，使得 hit_point = ray.origin + t * ray.direction
+    glm::vec3 hit_point; // 碰撞点
+    glm::vec3 normal;    // 碰撞点处的法向量（从圆柱轴指向碰撞点）
+};
 
 std::optional<float> ray_ring_intersection_distance(const Ray& ray, const Ring& ring);
+
+std::optional<RayCylinderHit> ray_cylinder_side_intersection(const Ray& ray, const Cylinder& cylinder);

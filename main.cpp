@@ -154,16 +154,6 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
                 std::cout << "未命中三角形" << std::endl;
             }
         }
-
-        {
-            std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
-            if (distance) {
-                std::cout << "命中圆环" << std::endl;
-                std::cout << "  距离: " << *distance << std::endl;
-            } else {
-                std::cout << "未命中圆环" << std::endl;
-            }
-        }
     }
 }
 
@@ -217,6 +207,16 @@ struct Renderable {
 
 entt::entity gizmo_y_ring_entity = entt::null;
 
+static bool is_gizmo_y_ring_hovered(const glm::vec3 &origin, const glm::vec3 &dir) {
+    float margin = 0.1f;
+    std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
+    if (distance && glm::abs(*distance - 1.0f) < margin) {
+        return true;
+    }
+    std::optional<RayCylinderHit> hit = ray_cylinder_side_intersection(Ray{origin, dir}, Cylinder{glm::vec3(0.0f, -margin, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f, 2 * margin});
+    return hit ? true : false;
+}
+
 int main() {
     JPH::RegisterDefaultAllocator();
     JPH::Factory::sInstance = new JPH::Factory();
@@ -243,13 +243,8 @@ int main() {
         auto [origin, dir] = compute_ray_from_screen(camera, x, y, width, height);
 
         // 检测是否在 gizmo 范围内
-        std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
-        if (distance) {
-            if (glm::abs(*distance - 1.0f) < 0.1f) {
-                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f); // set ring color to red
-            } else {
-                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
-            }
+        if (is_gizmo_y_ring_hovered(origin, dir)) {
+            registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f); // set ring color to red
         } else {
             registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
         }
