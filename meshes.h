@@ -24,6 +24,8 @@ MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end);
 
 MeshData generate_ring_mesh_data(float radius, uint32_t segments);
 
+MeshData generate_quad_mesh_data(float width, float height);
+
 #define MAX_MESH_BUFFERS 10
 
 struct MeshBuffers {

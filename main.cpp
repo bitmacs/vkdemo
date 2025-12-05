@@ -5,6 +5,7 @@
 #include "inputs.h"
 #include "meshes.h"
 #include "raycast.h"
+#include "render_view.h"
 #include "semaphores.h"
 #include "tasks.h"
 #include "vk.h"
@@ -36,6 +37,7 @@ Camera camera = {};
 VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
 VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
 entt::registry registry;
+entt::entity gizmo_y_ring_entity = entt::null;
 
 static void glfw_error_callback(int error, const char *description) {
     assert(false);
@@ -181,7 +183,7 @@ static void create_descriptor_pools(VkContext *context) {
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    descriptor_pool_create_info.maxSets = 1;
+    descriptor_pool_create_info.maxSets = 2; // scene render view and ui render view
     descriptor_pool_create_info.poolSizeCount = std::size(descriptor_pool_sizes);
     descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes;
 
@@ -205,8 +207,6 @@ struct Renderable {
     glm::vec3 color;
 };
 
-entt::entity gizmo_y_ring_entity = entt::null;
-
 static bool is_gizmo_y_ring_hovered(const glm::vec3 &origin, const glm::vec3 &dir) {
     float margin = 0.1f;
     std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
@@ -216,6 +216,160 @@ static bool is_gizmo_y_ring_hovered(const glm::vec3 &origin, const glm::vec3 &di
     std::optional<RayCylinderHit> hit = ray_cylinder_side_intersection(Ray{origin, dir}, Cylinder{glm::vec3(0.0f, -margin, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f, 2 * margin});
     return hit ? true : false;
 }
+
+static glm::mat4 compute_transform_matrix(const Transform &transform) {
+    glm::mat4 translation = glm::translate(glm::mat4(1.0f), transform.position);
+    glm::mat4 rotation = glm::mat4_cast(transform.orientation);
+    glm::mat4 scale = glm::scale(glm::mat4(1.0f), transform.scale);
+    return translation * rotation * scale;
+}
+
+struct SceneRenderView : RenderView {
+};
+
+struct UIRenderView : RenderView {
+    std::vector<VkBuffer> camera_buffers;
+    std::vector<VkDeviceMemory> camera_buffer_memories;
+
+    Camera camera;
+    CameraData camera_data;
+
+    void init(VkContext *vk_context, const std::vector<VkDescriptorPool> &descriptor_pools) override {
+        descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            allocate_descriptor_set(vk_context, descriptor_pools[i], &descriptor_sets[i]);
+        }
+
+        camera_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+        camera_buffer_memories.resize(MAX_FRAMES_IN_FLIGHT);
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            create_buffer(vk_context, sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &camera_buffers[i]);
+
+            VkMemoryRequirements memory_requirements;
+            vkGetBufferMemoryRequirements(vk_context->device, camera_buffers[i], &memory_requirements);
+            uint32_t memory_type_index = UINT32_MAX;
+            get_memory_type_index(vk_context, memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memory_type_index);
+            allocate_memory(vk_context, memory_requirements.size, memory_type_index, &camera_buffer_memories[i]);
+            vkBindBufferMemory(vk_context->device, camera_buffers[i], camera_buffer_memories[i], 0);
+        }
+    }
+
+    void cleanup(VkContext *vk_context, const std::vector<VkDescriptorPool> &descriptor_pools) override {
+        for (auto view = registry.view<Mesh>(); auto entity: view) {
+            Mesh &mesh = view.get<Mesh>(entity);
+            release_mesh_buffers(&mesh_buffers_registry, &task_system, vk_context, mesh.mesh_buffers_handle);
+        }
+        registry.clear();
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            vkDestroyBuffer(vk_context->device, camera_buffers[i], nullptr);
+            vkFreeMemory(vk_context->device, camera_buffer_memories[i], nullptr);
+        }
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            vkFreeDescriptorSets(vk_context->device, descriptor_pools[i], 1, &descriptor_sets[i]);
+        }
+        descriptor_sets.clear();
+    }
+
+    void update(VkContext *vk_context, uint8_t frame_index, uint32_t width, uint32_t height) override {
+        VkDescriptorBufferInfo descriptor_buffer_info = {};
+        descriptor_buffer_info.buffer = camera_buffers[frame_index];
+        descriptor_buffer_info.offset = 0;
+        descriptor_buffer_info.range = sizeof(CameraData);
+
+        VkWriteDescriptorSet write_descriptor_set = {};
+        write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write_descriptor_set.dstSet = descriptor_sets[frame_index];
+        write_descriptor_set.dstBinding = 0;
+        write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write_descriptor_set.descriptorCount = 1;
+        write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
+
+        vkUpdateDescriptorSets(vk_context->device, 1, &write_descriptor_set, 0, nullptr);
+
+        glm::mat4 view = glm::mat4(1.0f);
+
+        glm::mat4 projection = glm::ortho(0.0f, (float) width, 0.0f, (float) height, -1.0f, 1.0f);
+
+        // vulkan clip space has inverted y and half z
+        glm::mat4 clip = glm::mat4(
+            1.0f,  0.0f, 0.0f, 0.0f, // 1st column
+            0.0f, -1.0f, 0.0f, 0.0f,
+            0.0f,  0.0f, 0.5f, 0.0f,
+            0.0f,  0.0f, 0.5f, 1.0f
+        );
+
+        camera_data.view = view;
+        camera_data.projection = clip * projection;
+
+        void *ptr = nullptr;
+        vkMapMemory(vk_context->device, camera_buffer_memories[frame_index], 0, sizeof(CameraData), 0, &ptr);
+        memcpy(ptr, &camera_data, sizeof(CameraData));
+        vkUnmapMemory(vk_context->device, camera_buffer_memories[frame_index]);
+    }
+
+    void render(FrameContext *frame_context, uint8_t frame_index, VkPolygonMode polygon_mode, VkCommandBuffer command_buffer, uint32_t width, uint32_t height) override {
+        // collect renderables, determine the render order
+        std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash> pipeline_renderables;
+        for (auto view = registry.view<Mesh, Transform, Material>(); auto entity: view) {
+            Mesh &mesh = view.get<Mesh>(entity);
+            Transform &transform = view.get<Transform>(entity);
+
+            std::lock_guard lock(mesh_buffers_registry.mutex);
+            MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
+            if (!entry.uploaded) { continue; }
+            frame_context->mesh_buffers_handles.insert(mesh.mesh_buffers_handle);
+            ++entry.ref_count;
+            VkPrimitiveTopology pipeline_primitive_topology = entry.mesh_buffers.primitive_topology;
+            VkPolygonMode pipeline_polygon_mode = polygon_mode;
+            if (pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
+                pipeline_primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
+                pipeline_polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list or line strip topology
+            }
+            PipelineKey pipeline_key(pipeline_primitive_topology, pipeline_polygon_mode);
+            pipeline_renderables[pipeline_key].push_back({
+                .mesh_buffers_handle = mesh.mesh_buffers_handle,
+                .model_matrix = compute_transform_matrix(transform),
+                .color = registry.get<Material>(entity).color,
+            });
+        }
+        std::vector<PipelineKey> render_order = {
+            {VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL},
+            {VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE},
+            {VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE},
+            {VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE},
+        };
+        std::vector<std::pair<PipelineKey, std::vector<Renderable>>> sorted_pipeline_renderables;
+        for (const auto &pipeline_key: render_order) {
+            if (const auto it = pipeline_renderables.find(pipeline_key); it != pipeline_renderables.end()) {
+                sorted_pipeline_renderables.emplace_back(pipeline_key, std::move(it->second));
+            }
+        }
+        // render
+        for (const auto &[pipeline_key, renderables]: sorted_pipeline_renderables) {
+            VkPipeline pipeline = get_pipeline(&vk_context, pipeline_key);
+            vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1, &descriptor_sets[frame_index], 0, nullptr);
+            set_viewport(command_buffer, 0, 0, width, height);
+            set_scissor(command_buffer, 0, 0, width, height);
+            apply_pipeline_dynamic_states(&vk_context, command_buffer, pipeline_key, cull_mode);
+            VkDeviceSize offsets[] = {0};
+            for (const auto &renderable: renderables) {
+                MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[renderable.mesh_buffers_handle].mesh_buffers;
+                InstanceConstants instance = {};
+                instance.model = renderable.model_matrix;
+                instance.color = renderable.color;
+                vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
+                vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
+            if (mesh_buffers.index_count > 0) {
+                vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
+                vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
+            } else {
+                vkCmdDraw(command_buffer, mesh_buffers.vertex_count, 1, 0, 0);
+            }
+            }
+        }
+    }
+};
 
 int main() {
     JPH::RegisterDefaultAllocator();
@@ -284,6 +438,11 @@ int main() {
     std::vector<FrameContext> frame_contexts = {};
     frame_contexts.resize(MAX_FRAMES_IN_FLIGHT);
     uint32_t frame_index = 0;
+
+    SceneRenderView scene_render_view = {};
+    UIRenderView ui_render_view = {};
+    scene_render_view.init(&vk_context, descriptor_pools);
+    ui_render_view.init(&vk_context, descriptor_pools);
 
     camera.position = glm::vec3(0.0f, 0.0f, 2.0f);
     camera.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -360,6 +519,23 @@ int main() {
 
         gizmo_y_ring_entity = entity;
     }
+    {
+        auto entity = ui_render_view.registry.create();
+
+        auto &[mesh_buffers_handle] = ui_render_view.registry.emplace<Mesh>(entity);
+        float quad_width = 200.0f; // in pixels
+        float quad_height = height / (float) width * quad_width;
+        MeshData mesh_data = generate_quad_mesh_data(quad_width, quad_height);
+        mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        auto &[position, orientation, scale] = ui_render_view.registry.emplace<Transform>(entity);
+        position = glm::vec3(quad_width * 0.5f + 20.0f, quad_height * 0.5f + 20.0f, 0.0f);
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = ui_render_view.registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+    }
 
     while (!glfwWindowShouldClose(window)) {
         begin_inputs_frame(&inputs);
@@ -410,6 +586,9 @@ int main() {
         vkMapMemory(vk_context.device, camera_buffer_memories[frame_index], 0, sizeof(CameraData), 0, &ptr);
         memcpy(ptr, &camera_data, sizeof(CameraData));
         vkUnmapMemory(vk_context.device, camera_buffer_memories[frame_index]);
+
+        scene_render_view.update(&vk_context, frame_index, width, height);
+        ui_render_view.update(&vk_context, frame_index, width, height);
 
         std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash> pipeline_renderables;
         for (auto view = registry.view<Mesh, Transform, Material>(); auto entity: view) {
@@ -482,6 +661,9 @@ int main() {
                 }
             }
 
+            // scene_render_view.render(&frame_contexts[frame_index], polygon_mode, command_buffer, width, height);
+            ui_render_view.render(&frame_contexts[frame_index], frame_index, polygon_mode, command_buffer, width, height);
+
             end_render_pass(&vk_context, command_buffer);
         }
 
@@ -503,6 +685,8 @@ int main() {
         on_gpu_complete(&frame_contexts[i], &mesh_buffers_registry, &task_system, &vk_context);
     }
     frame_contexts.clear();
+    ui_render_view.cleanup(&vk_context, descriptor_pools);
+    scene_render_view.cleanup(&vk_context, descriptor_pools);
     for (auto view = registry.view<Mesh>(); auto entity: view) {
         Mesh &mesh = view.get<Mesh>(entity);
         release_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, mesh.mesh_buffers_handle);

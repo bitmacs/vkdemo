@@ -87,6 +87,30 @@ MeshData generate_ring_mesh_data(float radius, uint32_t segments) {
     return mesh;
 }
 
+MeshData generate_quad_mesh_data(float width, float height) {
+    MeshData mesh;
+
+    float half_width = width * 0.5f;
+    float half_height = height * 0.5f;
+
+    // 定义4个顶点（在XY平面上）
+    mesh.vertices = {
+        {glm::vec3(-half_width, -half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 左下
+        {glm::vec3( half_width, -half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 右下
+        {glm::vec3( half_width,  half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 右上
+        {glm::vec3(-half_width,  half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 左上
+    };
+
+    // 定义两个三角形
+    mesh.indices = {
+        0, 1, 2,  // 第一个三角形
+        2, 3, 0,  // 第二个三角形
+    };
+
+    mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    return mesh;
+}
+
 bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry,
                                       MeshBuffersHandle mesh_buffers_handle) {
     std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);
