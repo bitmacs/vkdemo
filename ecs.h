@@ -15,3 +15,8 @@ struct Transform {
 struct Material {
     glm::vec3 color;
 };
+
+struct Transform2D {
+    glm::vec3 position; // x, y pos and z-order
+    glm::vec2 scale;
+};

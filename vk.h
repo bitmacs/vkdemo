@@ -43,6 +43,7 @@ struct PipelineKeyHash {
 struct InstanceConstants {
     glm::mat4 model;
     glm::vec3 color;
+    uint32_t camera_index;
 };
 
 struct VkContext {
