@@ -1,4 +1,5 @@
 #version 440 core
+#extension GL_EXT_debug_printf : enable
 
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec3 color;
@@ -19,6 +20,7 @@ layout (location = 0) out VS_OUT {
 } vs_out;
 
 void main() {
+    // debugPrintfEXT("vertex index: %d", gl_VertexIndex);
     gl_Position = cameras[instance.camera_index].projection * cameras[instance.camera_index].view * instance.model * vec4(position, 1.0);
     vs_out.color = color * instance.color;
 }

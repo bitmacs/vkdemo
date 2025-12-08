@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iostream>
 #include <glm/mat4x4.hpp>
+#include <vulkan/vulkan_core.h>
 
 #define LOAD_INSTANCE_PROC_ADDR(instance, name) (PFN_ ## name) vkGetInstanceProcAddr(instance, #name);
 #define LOAD_DEVICE_PROC_ADDR(device, name) (PFN_ ## name) vkGetDeviceProcAddr(device, #name);
@@ -76,6 +77,20 @@ static void create_instance(VkContext *context) {
     app_info.engineVersion = VK_MAKE_VERSION(0, 0, 1);
     app_info.apiVersion = VK_API_VERSION_1_3;
 
+    // Configure validation features first
+    std::vector<VkValidationFeatureEnableEXT> validation_feature_enables = {};
+    validation_feature_enables.push_back(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT);
+    // validation_feature_enables.push_back(VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT);
+    // validation_feature_enables.push_back(VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT);
+
+    VkValidationFeaturesEXT validation_features = {};
+    validation_features.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+    validation_features.enabledValidationFeatureCount = validation_feature_enables.size();
+    validation_features.pEnabledValidationFeatures = validation_feature_enables.data();
+    validation_features.pNext = nullptr; // End of chain
+
+    // Configure debug messenger to capture validation messages during instance creation
+    // This should be first in the pNext chain to catch messages from instance creation
     VkDebugUtilsMessengerCreateInfoEXT debug_utils_messenger_create_info = {};
     debug_utils_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     debug_utils_messenger_create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
@@ -86,6 +101,7 @@ static void create_instance(VkContext *context) {
                                                     VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                                                     VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     debug_utils_messenger_create_info.pfnUserCallback = debug_callback;
+    debug_utils_messenger_create_info.pNext = &validation_features; // Link validation features
 
     VkInstanceCreateInfo instance_create_info = {};
     instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -94,7 +110,7 @@ static void create_instance(VkContext *context) {
     instance_create_info.ppEnabledExtensionNames = instance_extensions.data();
     instance_create_info.enabledLayerCount = instance_layers.size();
     instance_create_info.ppEnabledLayerNames = instance_layers.data();
-    instance_create_info.pNext = &debug_utils_messenger_create_info;
+    instance_create_info.pNext = &debug_utils_messenger_create_info; // Start with debug messenger
     instance_create_info.flags |= has_VK_KHR_portability_enumeration
                                       ? VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
                                       : 0;
@@ -173,6 +189,8 @@ static void create_device(VkContext *context) {
         for (const auto &extension: extensions) {
             if (strcmp(extension.extensionName, "VK_KHR_portability_subset") == 0) {
                 device_extensions.push_back("VK_KHR_portability_subset");
+            } else if (strcmp(extension.extensionName, "VK_KHR_shader_non_semantic_info") == 0) {
+                device_extensions.push_back("VK_KHR_shader_non_semantic_info");
             }
         }
     }
