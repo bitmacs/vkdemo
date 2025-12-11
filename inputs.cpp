@@ -16,6 +16,12 @@ void begin_inputs_frame(Inputs *inputs) {
     inputs->mouse_scroll_delta = glm::vec2(0.0f);
 }
 
+void press_key(Inputs *inputs, int key) { inputs->keys[key] = true; }
+
+void release_key(Inputs *inputs, int key) { inputs->keys[key] = false; }
+
 void move_mouse(Inputs *inputs, float x, float y) {
     inputs->mouse_pos = glm::vec2(x, y);
 }
+
+bool is_key_pressed(Inputs *inputs, int key) { return inputs->keys[key]; }

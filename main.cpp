@@ -43,6 +43,11 @@ static void glfw_error_callback(int error, const char *description) {
 }
 
 static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_PRESS) {
+        press_key(&inputs, key);
+    } else if (action == GLFW_RELEASE) {
+        release_key(&inputs, key);
+    }
     if (action == GLFW_RELEASE) {
         if (key == GLFW_KEY_ESCAPE) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -50,25 +55,6 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
             polygon_mode = polygon_mode == VK_POLYGON_MODE_FILL ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         } else if (key == GLFW_KEY_C) {
             cull_mode = cull_mode == VK_CULL_MODE_NONE ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
-        }
-        {
-            glm::mat3 rot_mat = glm::mat3_cast(camera.orientation);
-            glm::vec3 right = rot_mat[0];
-            glm::vec3 forward = -rot_mat[2];
-            glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-
-            float move_delta = 1.0f;
-            glm::vec3 move_dir(0.0f);
-
-            if (key == GLFW_KEY_W) { move_dir += forward; }
-            if (key == GLFW_KEY_S) { move_dir -= forward; }
-            if (key == GLFW_KEY_A) { move_dir -= right; }
-            if (key == GLFW_KEY_D) { move_dir += right; }
-            if (key == GLFW_KEY_Q) { move_dir += up; }
-            if (key == GLFW_KEY_E) { move_dir -= up; }
-            if (glm::length(move_dir) > 0.0f) {
-                camera.position += glm::normalize(move_dir) * move_delta;
-            }
         }
         {
             float angle_delta = glm::radians(5.0f);
@@ -312,6 +298,8 @@ int main() {
 
     CameraData camera_data[2] = {}; // [0] = 3D scene camera, [1] = UI camera
 
+    double last_frame_time = glfwGetTime();
+
     std::vector<VkBuffer> camera_buffers = {};
     std::vector<VkDeviceMemory> camera_buffer_memories = {};
     camera_buffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -396,9 +384,34 @@ int main() {
     }
 
     while (!glfwWindowShouldClose(window)) {
+        double current_time = glfwGetTime();
+        float delta_time = (float) (current_time - last_frame_time);
+        last_frame_time = current_time;
+
         begin_inputs_frame(&inputs);
         glfwPollEvents();
 
+        float camera_move_speed = 2.5f; // 基础移动速度（单位/秒）
+        // 基于时间的相机移动
+        {
+            glm::mat3 rot_mat = glm::mat3_cast(camera.orientation);
+            glm::vec3 right = rot_mat[0];
+            glm::vec3 forward = -rot_mat[2];
+            glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+
+            glm::vec3 move_dir(0.0f);
+
+            if (is_key_pressed(&inputs, GLFW_KEY_W)) { move_dir += forward; }
+            if (is_key_pressed(&inputs, GLFW_KEY_S)) { move_dir -= forward; }
+            if (is_key_pressed(&inputs, GLFW_KEY_A)) { move_dir -= right; }
+            if (is_key_pressed(&inputs, GLFW_KEY_D)) { move_dir += right; }
+            if (is_key_pressed(&inputs, GLFW_KEY_Q)) { move_dir += up; }
+            if (is_key_pressed(&inputs, GLFW_KEY_E)) { move_dir -= up; }
+
+            if (glm::length(move_dir) > 0.0f) {
+                camera.position += glm::normalize(move_dir) * camera_move_speed * delta_time;
+            }
+        }
         wait_for_frame(&vk_context, frame_index);
 
         on_gpu_complete(&frame_contexts[frame_index], &mesh_buffers_registry, &task_system, &vk_context);
