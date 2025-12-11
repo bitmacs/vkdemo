@@ -56,21 +56,6 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
         } else if (key == GLFW_KEY_C) {
             cull_mode = cull_mode == VK_CULL_MODE_NONE ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
         }
-        {
-            float angle_delta = glm::radians(5.0f);
-            glm::vec2 rot_delta(0.0f);
-
-            if (key == GLFW_KEY_UP) { rot_delta.x += angle_delta; }
-            if (key == GLFW_KEY_DOWN) { rot_delta.x -= angle_delta; }
-            if (key == GLFW_KEY_LEFT) { rot_delta.y += angle_delta; }
-            if (key == GLFW_KEY_RIGHT) { rot_delta.y -= angle_delta; }
-
-            if (rot_delta.x != 0.0f || rot_delta.y != 0.0f) {
-                glm::quat yaw_quat = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f));
-                glm::quat pitch_quat = glm::angleAxis(rot_delta.x, glm::vec3(1.0f, 0.0f, 0.0f));
-                camera.orientation = glm::normalize(yaw_quat * camera.orientation * pitch_quat);
-            }
-        }
     }
 }
 
@@ -91,6 +76,11 @@ static void glfw_cursor_pos_callback(GLFWwindow *window, double xpos, double ypo
 }
 
 static void glfw_mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
+    if (action == GLFW_PRESS) {
+        press_mouse_button(&inputs, button);
+    } else if (action == GLFW_RELEASE) {
+        release_mouse_button(&inputs, button);
+    }
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
         int width, height;
         glfwGetWindowSize(window, &width, &height);
@@ -392,6 +382,8 @@ int main() {
         glfwPollEvents();
 
         float camera_move_speed = 2.5f; // 基础移动速度（单位/秒）
+        float camera_rotate_speed = glm::radians(60.0f); // 基础旋转速度（弧度/秒）
+
         // 基于时间的相机移动
         {
             glm::mat3 rot_mat = glm::mat3_cast(camera.orientation);
@@ -412,6 +404,22 @@ int main() {
                 camera.position += glm::normalize(move_dir) * camera_move_speed * delta_time;
             }
         }
+        // 基于时间的相机旋转
+        {
+            glm::vec2 rot_delta(0.0f);
+
+            if (is_key_pressed(&inputs, GLFW_KEY_UP)) { rot_delta.x += camera_rotate_speed * delta_time; }
+            if (is_key_pressed(&inputs, GLFW_KEY_DOWN)) { rot_delta.x -= camera_rotate_speed * delta_time; }
+            if (is_key_pressed(&inputs, GLFW_KEY_LEFT)) { rot_delta.y += camera_rotate_speed * delta_time; }
+            if (is_key_pressed(&inputs, GLFW_KEY_RIGHT)) { rot_delta.y -= camera_rotate_speed * delta_time; }
+
+            if (rot_delta.x != 0.0f || rot_delta.y != 0.0f) {
+                glm::quat yaw_quat = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f));
+                glm::quat pitch_quat = glm::angleAxis(rot_delta.x, glm::vec3(1.0f, 0.0f, 0.0f));
+                camera.orientation = glm::normalize(yaw_quat * camera.orientation * pitch_quat);
+            }
+        }
+
         wait_for_frame(&vk_context, frame_index);
 
         on_gpu_complete(&frame_contexts[frame_index], &mesh_buffers_registry, &task_system, &vk_context);

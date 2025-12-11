@@ -20,6 +20,10 @@ void press_key(Inputs *inputs, int key) { inputs->keys[key] = true; }
 
 void release_key(Inputs *inputs, int key) { inputs->keys[key] = false; }
 
+void press_mouse_button(Inputs *inputs, int button) { inputs->mouse_buttons[button] = true; }
+
+void release_mouse_button(Inputs *inputs, int button) { inputs->mouse_buttons[button] = false; }
+
 void move_mouse(Inputs *inputs, float x, float y) {
     inputs->mouse_pos = glm::vec2(x, y);
 }
