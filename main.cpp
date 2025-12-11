@@ -211,6 +211,45 @@ static PipelineKey get_pipeline_key(VkPrimitiveTopology primitive_topology, VkPo
     return PipelineKey(primitive_topology, polygon_mode);
 }
 
+static void update_camera(float delta_time) {
+    float move_speed = 2.5f; // 移动速度（单位/秒）
+    float rotate_speed = glm::radians(60.0f); // 旋转速度（弧度/秒）
+
+    {
+        glm::mat3 rot_mat = glm::mat3_cast(camera.orientation);
+        glm::vec3 right = rot_mat[0];
+        glm::vec3 forward = -rot_mat[2];
+        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+
+        glm::vec3 move_dir(0.0f);
+
+        if (is_key_pressed(&inputs, GLFW_KEY_W)) { move_dir += forward; }
+        if (is_key_pressed(&inputs, GLFW_KEY_S)) { move_dir -= forward; }
+        if (is_key_pressed(&inputs, GLFW_KEY_A)) { move_dir -= right; }
+        if (is_key_pressed(&inputs, GLFW_KEY_D)) { move_dir += right; }
+        if (is_key_pressed(&inputs, GLFW_KEY_Q)) { move_dir += up; }
+        if (is_key_pressed(&inputs, GLFW_KEY_E)) { move_dir -= up; }
+
+        if (glm::length(move_dir) > 0.0f) {
+            camera.position += glm::normalize(move_dir) * move_speed * delta_time;
+        }
+    }
+    {
+        glm::vec2 rot_delta(0.0f);
+
+        if (is_key_pressed(&inputs, GLFW_KEY_UP)) { rot_delta.x += rotate_speed * delta_time; }
+        if (is_key_pressed(&inputs, GLFW_KEY_DOWN)) { rot_delta.x -= rotate_speed * delta_time; }
+        if (is_key_pressed(&inputs, GLFW_KEY_LEFT)) { rot_delta.y += rotate_speed * delta_time; }
+        if (is_key_pressed(&inputs, GLFW_KEY_RIGHT)) { rot_delta.y -= rotate_speed * delta_time; }
+
+        if (rot_delta.x != 0.0f || rot_delta.y != 0.0f) {
+            glm::quat yaw_quat = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::quat pitch_quat = glm::angleAxis(rot_delta.x, glm::vec3(1.0f, 0.0f, 0.0f));
+            camera.orientation = glm::normalize(yaw_quat * camera.orientation * pitch_quat);
+        }
+    }
+}
+
 int main() {
     JPH::RegisterDefaultAllocator();
     JPH::Factory::sInstance = new JPH::Factory();
@@ -381,44 +420,7 @@ int main() {
         begin_inputs_frame(&inputs);
         glfwPollEvents();
 
-        float camera_move_speed = 2.5f; // 基础移动速度（单位/秒）
-        float camera_rotate_speed = glm::radians(60.0f); // 基础旋转速度（弧度/秒）
-
-        // 基于时间的相机移动
-        {
-            glm::mat3 rot_mat = glm::mat3_cast(camera.orientation);
-            glm::vec3 right = rot_mat[0];
-            glm::vec3 forward = -rot_mat[2];
-            glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
-
-            glm::vec3 move_dir(0.0f);
-
-            if (is_key_pressed(&inputs, GLFW_KEY_W)) { move_dir += forward; }
-            if (is_key_pressed(&inputs, GLFW_KEY_S)) { move_dir -= forward; }
-            if (is_key_pressed(&inputs, GLFW_KEY_A)) { move_dir -= right; }
-            if (is_key_pressed(&inputs, GLFW_KEY_D)) { move_dir += right; }
-            if (is_key_pressed(&inputs, GLFW_KEY_Q)) { move_dir += up; }
-            if (is_key_pressed(&inputs, GLFW_KEY_E)) { move_dir -= up; }
-
-            if (glm::length(move_dir) > 0.0f) {
-                camera.position += glm::normalize(move_dir) * camera_move_speed * delta_time;
-            }
-        }
-        // 基于时间的相机旋转
-        {
-            glm::vec2 rot_delta(0.0f);
-
-            if (is_key_pressed(&inputs, GLFW_KEY_UP)) { rot_delta.x += camera_rotate_speed * delta_time; }
-            if (is_key_pressed(&inputs, GLFW_KEY_DOWN)) { rot_delta.x -= camera_rotate_speed * delta_time; }
-            if (is_key_pressed(&inputs, GLFW_KEY_LEFT)) { rot_delta.y += camera_rotate_speed * delta_time; }
-            if (is_key_pressed(&inputs, GLFW_KEY_RIGHT)) { rot_delta.y -= camera_rotate_speed * delta_time; }
-
-            if (rot_delta.x != 0.0f || rot_delta.y != 0.0f) {
-                glm::quat yaw_quat = glm::angleAxis(rot_delta.y, glm::vec3(0.0f, 1.0f, 0.0f));
-                glm::quat pitch_quat = glm::angleAxis(rot_delta.x, glm::vec3(1.0f, 0.0f, 0.0f));
-                camera.orientation = glm::normalize(yaw_quat * camera.orientation * pitch_quat);
-            }
-        }
+        update_camera(delta_time);
 
         wait_for_frame(&vk_context, frame_index);
 
