@@ -376,7 +376,7 @@ int main() {
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        material.color = glm::vec3(0.7f, 0.65f, 0.6f); // 浅棕色地面颜色
     }
     {
         auto entity = registry.create();

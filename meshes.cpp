@@ -6,9 +6,9 @@
 MeshData generate_triangle_mesh_data() {
     MeshData mesh_data;
     mesh_data.vertices = {
-        {glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f)},
-        {glm::vec3( 0.5f, -0.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f)},
-        {glm::vec3( 0.0f,  0.5f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)},
+        {glm::vec3(-0.5f, -0.5f, 0.0f)},
+        {glm::vec3( 0.5f, -0.5f, 0.0f)},
+        {glm::vec3( 0.0f,  0.5f, 0.0f)},
     };
     mesh_data.indices = {0, 1, 2};
     mesh_data.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -27,13 +27,8 @@ MeshData generate_plane_mesh_data(float size, uint32_t segments) {
             float x_pos = -half_size + static_cast<float>(x) * step;
             float z_pos = -half_size + static_cast<float>(y) * step;
 
-            // 使用简单的颜色渐变
-            float r = static_cast<float>(x) / static_cast<float>(segments);
-            float g = static_cast<float>(y) / static_cast<float>(segments);
-
             mesh.vertices.push_back({
-                glm::vec3(x_pos, 0.0f, z_pos),
-                glm::vec3(r, g, 0.5f)
+                glm::vec3(x_pos, 0.0f, z_pos)
             });
         }
     }
@@ -64,7 +59,7 @@ MeshData generate_plane_mesh_data(float size, uint32_t segments) {
 
 MeshData generate_line_mesh_data(const glm::vec3 &start, const glm::vec3 &end) {
     MeshData mesh;
-    mesh.vertices = {{start, glm::vec3(1.0f, 1.0f, 1.0f)}, {end, glm::vec3(1.0f, 1.0f, 1.0f)}};
+    mesh.vertices = {{start}, {end}};
     mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     return mesh;
 }
@@ -73,14 +68,13 @@ MeshData generate_ring_mesh_data(float radius, uint32_t segments) {
     MeshData mesh;
 
     float angle_step = 2.0f * glm::pi<float>() / static_cast<float>(segments);
-    glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
 
     // 绘制圆环
     for (uint32_t i = 0; i <= segments; ++i) {
         float angle = (float) i * angle_step;
         float cos_a = std::cos(angle);
         float sin_a = std::sin(angle);
-        mesh.vertices.push_back({glm::vec3(radius * cos_a, 0.0f, radius * sin_a), color});
+        mesh.vertices.push_back({glm::vec3(radius * cos_a, 0.0f, radius * sin_a)});
     }
 
     mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
@@ -95,10 +89,10 @@ MeshData generate_quad_mesh_data(float width, float height) {
 
     // 定义4个顶点（在XY平面上）
     mesh.vertices = {
-        {glm::vec3(-half_width, -half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 左下
-        {glm::vec3( half_width, -half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 右下
-        {glm::vec3( half_width,  half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 右上
-        {glm::vec3(-half_width,  half_height, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f)}, // 左上
+        {glm::vec3(-half_width, -half_height, 0.0f)}, // 左下
+        {glm::vec3( half_width, -half_height, 0.0f)}, // 右下
+        {glm::vec3( half_width,  half_height, 0.0f)}, // 右上
+        {glm::vec3(-half_width,  half_height, 0.0f)}, // 左上
     };
 
     // 定义两个三角形

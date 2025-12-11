@@ -8,7 +8,6 @@
 
 struct Vertex {
     glm::vec3 position;
-    glm::vec3 color;
 };
 
 // Mesh数据容器，包含顶点和索引

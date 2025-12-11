@@ -494,15 +494,6 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
 
         vertex_input_attribute_descriptions.push_back(vertex_input_attribute_description);
     }
-    {
-        VkVertexInputAttributeDescription vertex_input_attribute_description = {};
-        vertex_input_attribute_description.binding = 0;
-        vertex_input_attribute_description.location = 1;
-        vertex_input_attribute_description.format = VK_FORMAT_R32G32B32_SFLOAT;
-        vertex_input_attribute_description.offset = offsetof(Vertex, color);
-
-        vertex_input_attribute_descriptions.push_back(vertex_input_attribute_description);
-    }
 
     VkPipelineVertexInputStateCreateInfo vertex_input_state_create_info = {};
     vertex_input_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
