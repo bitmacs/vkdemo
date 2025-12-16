@@ -473,7 +473,7 @@ static void create_shader_module(VkContext *context, const char *filepath, VkSha
     assert(result == VK_SUCCESS);
 }
 
-static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
+static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode, bool depth_test_enabled) {
     if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
         primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
         assert(polygon_mode == VK_POLYGON_MODE_LINE); // polygon mode must be line for line list or line strip topology
@@ -528,8 +528,8 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
 
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create_info = {};
     depth_stencil_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_stencil_state_create_info.depthTestEnable = VK_TRUE;
-    depth_stencil_state_create_info.depthWriteEnable = VK_TRUE;
+    depth_stencil_state_create_info.depthTestEnable = depth_test_enabled ? VK_TRUE : VK_FALSE;
+    depth_stencil_state_create_info.depthWriteEnable = depth_test_enabled ? VK_TRUE : VK_FALSE;
     depth_stencil_state_create_info.depthCompareOp = VK_COMPARE_OP_LESS;
 
     VkPipelineViewportStateCreateInfo viewport_state_create_info = {};
@@ -592,8 +592,8 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
     VkResult result = vkCreateGraphicsPipelines(context->device, nullptr, 1, &pipeline_create_info, nullptr, &pipeline);
     assert(result == VK_SUCCESS);
 
-    PipelineKey key(primitive_topology, polygon_mode);
-    context->pipelines[key] = pipeline;
+    PipelineKey pipeline_key(primitive_topology, polygon_mode, depth_test_enabled);
+    context->pipelines[pipeline_key] = pipeline;
 
     vkDestroyShaderModule(context->device, vertex_shader_module, nullptr);
     vkDestroyShaderModule(context->device, fragment_shader_module, nullptr);
@@ -611,10 +611,12 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_command_pool(context);
     create_descriptor_set_layout(context);
     create_pipeline_layout(context, sizeof(InstanceConstants));
-    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL);
-    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE);
-    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE);
-    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL, true);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL, false);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE, true);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE, false);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE, true);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE, true);
 }
 
 void cleanup_vk(VkContext *context) {

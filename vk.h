@@ -5,25 +5,28 @@
 #include <glm/glm.hpp>
 #include <glm/vec3.hpp>
 #include <vector>
-#include <unordered_map>
 
 struct PipelineKey {
     // 位域布局（总共64位）：
     // [0-4]   primitive_topology (5 bits)
     // [5-6]   polygon_mode (2 bits)
+    // [7]     depth_test_enabled (1 bit)
     union {
         struct {
             uint32_t primitive_topology: 5; // bits [0-4]: VkPrimitiveTopology (转换为uint32_t)
             uint32_t polygon_mode: 2; // bits [5-6]: VK_POLYGON_MODE_FILL, LINE
+            uint32_t depth_test: 1; // bit [7]: 是否启用深度测试
         };
         uint32_t state_bits; // 低32位状态
     };
 
     uint32_t shader_hash; // 高32位：shader hash
 
-    PipelineKey(VkPrimitiveTopology topology, VkPolygonMode mode) : state_bits(0), shader_hash(0) {
+    PipelineKey(VkPrimitiveTopology topology, VkPolygonMode mode, bool depth_test_enabled)
+        : state_bits(0), shader_hash(0) {
         primitive_topology = static_cast<uint32_t>(topology);
         polygon_mode = static_cast<uint32_t>(mode);
+        depth_test = depth_test_enabled ? 1 : 0;
     }
 
     bool operator==(const PipelineKey &other) const {

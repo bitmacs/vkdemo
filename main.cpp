@@ -182,6 +182,34 @@ struct Renderable {
     glm::vec3 color;
 };
 
+static void render_pipeline_renderables(VkCommandBuffer command_buffer, VkContext *vk_context, MeshBuffersRegistry *mesh_buffers_registry, VkDescriptorSet descriptor_set, const PipelineKey &pipeline_key, const std::vector<Renderable> &renderables, uint32_t camera_index, uint32_t width, uint32_t height, VkCullModeFlags cull_mode) {
+    VkPipeline pipeline = get_pipeline(vk_context, pipeline_key);
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context->pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+    set_viewport(command_buffer, 0, 0, width, height);
+    set_scissor(command_buffer, 0, 0, width, height);
+    apply_pipeline_dynamic_states(vk_context, command_buffer, pipeline_key, cull_mode);
+
+    VkDeviceSize offsets[] = {0};
+    for (const auto &renderable: renderables) {
+        MeshBuffers &mesh_buffers = mesh_buffers_registry->entries[renderable.mesh_buffers_handle].mesh_buffers;
+        InstanceConstants instance = {};
+        instance.model = renderable.model_matrix;
+        instance.color = renderable.color;
+        instance.camera_index = camera_index;
+
+        vkCmdPushConstants(command_buffer, vk_context->pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
+
+        if (mesh_buffers.index_count > 0) {
+            vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
+            vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
+        } else {
+            vkCmdDraw(command_buffer, mesh_buffers.vertex_count, 1, 0, 0);
+        }
+    }
+}
+
 static bool is_gizmo_y_ring_hovered(const glm::vec3 &origin, const glm::vec3 &dir) {
     float margin = 0.1f;
     std::optional<float> distance = ray_ring_intersection_distance(Ray{origin, dir}, Ring{glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 1.0f});
@@ -204,11 +232,11 @@ static glm::mat4 compute_transform_matrix(const Transform2D &transform) {
            * glm::scale(glm::mat4(1.0f), glm::vec3(transform.scale, 1.0f));
 }
 
-static PipelineKey get_pipeline_key(VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode) {
+static PipelineKey get_pipeline_key(VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode, bool depth_test_enabled) {
     if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
         polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list or line strip topology
     }
-    return PipelineKey(primitive_topology, polygon_mode);
+    return PipelineKey(primitive_topology, polygon_mode, depth_test_enabled);
 }
 
 static void update_camera(float delta_time) {
@@ -480,59 +508,85 @@ int main() {
 
         vkUpdateDescriptorSets(vk_context.device, 1, &write_descriptor_set, 0, nullptr);
 
-        std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash> scene_pipeline_renderables;
+        // 按渲染队列和Pipeline分组收集renderables
+        enum RenderQueueType {
+            RENDER_QUEUE_TYPE_SCENE,
+            RENDER_QUEUE_TYPE_UI,
+        };
+        std::unordered_map<RenderQueueType, std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash>> render_queue_pipeline_renderables;
+
+        // 收集Scene实体（Mesh + Transform + Material）
         for (auto view = registry.view<Mesh, Transform, Material>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform &transform = view.get<Transform>(entity);
+            Material &material = view.get<Material>(entity);
 
             std::lock_guard lock(mesh_buffers_registry.mutex);
             MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
             if (!entry.uploaded) { continue; }
+
             add_ref(&frame_contexts[frame_index], mesh.mesh_buffers_handle);
             ++entry.ref_count;
-            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode);
-            scene_pipeline_renderables[pipeline_key].push_back({
+
+            // Scene使用深度测试
+            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, true);
+
+            render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_SCENE][pipeline_key].push_back({
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
                 .model_matrix = compute_transform_matrix(transform),
-                .color = registry.get<Material>(entity).color,
+                .color = material.color,
             });
         }
-        std::vector<PipelineKey> pipeline_render_order = {
-            {VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL},
-            {VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE},
-            {VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE},
-            {VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE},
-        };
-        std::vector<std::pair<PipelineKey, std::vector<Renderable>>> sorted_scene_pipeline_renderables;
-        for (const auto &pipeline_key: pipeline_render_order) {
-            if (const auto it = scene_pipeline_renderables.find(pipeline_key); it != scene_pipeline_renderables.end()) {
-                sorted_scene_pipeline_renderables.emplace_back(pipeline_key, std::move(it->second));
-            }
-        }
 
-        std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash> ui_pipeline_renderables;
+        // 收集UI实体（Mesh + Transform2D + Material）
         for (auto view = registry.view<Mesh, Transform2D, Material>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform2D &transform = view.get<Transform2D>(entity);
+            Material &material = view.get<Material>(entity);
 
             std::lock_guard lock(mesh_buffers_registry.mutex);
             MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
             if (!entry.uploaded) { continue; }
+
             add_ref(&frame_contexts[frame_index], mesh.mesh_buffers_handle);
             ++entry.ref_count;
-            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode);
-            ui_pipeline_renderables[pipeline_key].push_back({
+
+            // UI禁用深度测试
+            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, false);
+
+            render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_UI][pipeline_key].push_back({
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
                 .model_matrix = compute_transform_matrix(transform),
-                .color = registry.get<Material>(entity).color,
+                .color = material.color,
             });
         }
-        std::vector<std::pair<PipelineKey, std::vector<Renderable>>> sorted_ui_pipeline_renderables;
-        for (const auto &pipeline_key: pipeline_render_order) {
-            if (const auto it = ui_pipeline_renderables.find(pipeline_key); it != ui_pipeline_renderables.end()) {
-                sorted_ui_pipeline_renderables.emplace_back(pipeline_key, std::move(it->second));
-            }
+
+        // UI队列按z值排序（在收集阶段完成，避免渲染时重复排序）
+        auto &ui_pipeline_renderables = render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_UI];
+        for (auto &[pipeline_key, renderables] : ui_pipeline_renderables) {
+            // 按z值排序：从model_matrix的平移向量中提取z值，z值大的先渲染
+            std::sort(renderables.begin(), renderables.end(),
+                [](const Renderable &a, const Renderable &b) {
+                    // model_matrix[3]是平移向量，[3][2]是z分量
+                    float z_a = a.model_matrix[3][2];
+                    float z_b = b.model_matrix[3][2];
+                    return z_a > z_b; // z值大的先渲染（显示在后面）
+                });
         }
+
+        // 定义渲染队列顺序（SCENE -> UI）
+        const std::vector<RenderQueueType> render_queue_order = {
+            RENDER_QUEUE_TYPE_SCENE,
+            RENDER_QUEUE_TYPE_UI,
+        };
+
+        // 定义SCENE队列的Pipeline渲染顺序（减少状态切换）
+        const std::vector<PipelineKey> scene_pipeline_render_order = {
+            PipelineKey(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL, true),
+            PipelineKey(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE, true),
+            PipelineKey(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE, true),
+            PipelineKey(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE, true),
+        };
 
         VkCommandBuffer command_buffer = command_buffers[frame_index];
         begin_command_buffer(&vk_context, command_buffer);
@@ -543,55 +597,33 @@ int main() {
             clear_values[1].depthStencil = {.depth = 1.0f, .stencil = 0};
 
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
-                              vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
+                              vk_context.framebuffers[image_index], window_width, window_height, clear_values, std::size(clear_values));
 
-            for (const auto &[pipeline_key, renderables]: sorted_scene_pipeline_renderables) {
-                VkPipeline pipeline = get_pipeline(&vk_context, pipeline_key);
-                vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1, &descriptor_sets[frame_index], 0, nullptr);
-                set_viewport(command_buffer, 0, 0, width, height);
-                set_scissor(command_buffer, 0, 0, width, height);
-                apply_pipeline_dynamic_states(&vk_context, command_buffer, pipeline_key, cull_mode);
-                VkDeviceSize offsets[] = {0};
-                for (const auto &renderable: renderables) {
-                    MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[renderable.mesh_buffers_handle].mesh_buffers;
-                    InstanceConstants instance = {};
-                    instance.model = renderable.model_matrix;
-                    instance.color = renderable.color;
-                    instance.camera_index = 0; // 3D scene camera
-                    vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
-                    vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
-                    if (mesh_buffers.index_count > 0) {
-                        vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
-                        vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
-                    } else {
-                        vkCmdDraw(command_buffer, mesh_buffers.vertex_count, 1, 0, 0);
+            for (RenderQueueType queue_type : render_queue_order) {
+                auto queue_it = render_queue_pipeline_renderables.find(queue_type);
+                if (queue_it == render_queue_pipeline_renderables.end()) { continue; }
+
+                const auto &pipeline_renderables = queue_it->second;
+                uint32_t camera_index = (queue_type == RENDER_QUEUE_TYPE_UI) ? 1 : 0;
+
+                // SCENE队列按pipeline order顺序渲染，UI队列直接遍历
+                if (queue_type == RENDER_QUEUE_TYPE_SCENE) {
+                    // 按预定义的pipeline顺序渲染
+                    for (const PipelineKey &pipeline_key : scene_pipeline_render_order) {
+                        auto pipeline_it = pipeline_renderables.find(pipeline_key);
+                        if (pipeline_it == pipeline_renderables.end()) { continue; }
+
+                        const auto &renderables = pipeline_it->second;
+                        if (renderables.empty()) { continue; }
+
+                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, window_width, window_height, cull_mode);
                     }
-                }
-            }
+                } else {
+                    // UI队列直接遍历所有pipeline（已在收集阶段完成z值排序）
+                    for (const auto &[pipeline_key, renderables] : pipeline_renderables) {
+                        if (renderables.empty()) { continue; }
 
-            // Render UI with camera_index = 1
-            for (const auto &[pipeline_key, renderables]: sorted_ui_pipeline_renderables) {
-                VkPipeline pipeline = get_pipeline(&vk_context, pipeline_key);
-                vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_context.pipeline_layout, 0, 1, &descriptor_sets[frame_index], 0, nullptr);
-                set_viewport(command_buffer, 0, 0, width, height);
-                set_scissor(command_buffer, 0, 0, width, height);
-                apply_pipeline_dynamic_states(&vk_context, command_buffer, pipeline_key, cull_mode);
-                VkDeviceSize offsets[] = {0};
-                for (const auto &renderable: renderables) {
-                    MeshBuffers &mesh_buffers = mesh_buffers_registry.entries[renderable.mesh_buffers_handle].mesh_buffers;
-                    InstanceConstants instance = {};
-                    instance.model = renderable.model_matrix;
-                    instance.color = renderable.color;
-                    instance.camera_index = 1; // UI camera
-                    vkCmdPushConstants(command_buffer, vk_context.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(InstanceConstants), &instance);
-                    vkCmdBindVertexBuffers(command_buffer, 0, 1, &mesh_buffers.vertex_buffer, offsets);
-                    if (mesh_buffers.index_count > 0) {
-                        vkCmdBindIndexBuffer(command_buffer, mesh_buffers.index_buffer, 0, mesh_buffers.index_type);
-                        vkCmdDrawIndexed(command_buffer, mesh_buffers.index_count, 1, 0, 0, 0);
-                    } else {
-                        vkCmdDraw(command_buffer, mesh_buffers.vertex_count, 1, 0, 0);
+                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, window_width, window_height, cull_mode);
                     }
                 }
             }
