@@ -7,6 +7,7 @@
 
 enum EventCode {
     EVENT_CODE_MOUSE_MOVE,
+    EVENT_CODE_MOUSE_SCROLL,
 };
 
 struct EventData {
@@ -21,6 +22,8 @@ struct Events {
     std::unordered_map<EventCode, std::vector<std::function<bool(const EventData &event_data)>>> event_handlers;
 };
 
+void init_events(Events *events);
+void shutdown_events(Events *events);
 void register_event_handler(Events *events, EventCode event_code,
                             std::function<bool(const EventData &event_data)> &&handler);
 

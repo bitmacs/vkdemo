@@ -20,7 +20,6 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/TriangleShape.h>
 #include <Jolt/RegisterTypes.h>
-#include <iostream>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -60,12 +59,7 @@ static void glfw_key_callback(GLFWwindow *window, int key, int scancode, int act
 }
 
 static void glfw_scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
-    float fov_y_delta = glm::radians(5.0f);
-    float min_fov_y = glm::radians(10.0f);
-    float max_fov_y = glm::radians(120.0f);
-
-    camera.fov_y -= (float) yoffset * fov_y_delta;
-    camera.fov_y = glm::clamp(camera.fov_y, min_fov_y, max_fov_y);
+    dispatch_event(&events, EVENT_CODE_MOUSE_SCROLL, EventData{.f32 = {(float) xoffset, (float) yoffset}});
 }
 
 static void glfw_cursor_pos_callback(GLFWwindow *window, double xpos, double ypos) {
@@ -295,20 +289,30 @@ int main() {
     glfwSetCursorPosCallback(window, glfw_cursor_pos_callback);
 
     init_inputs(&inputs);
+    init_events(&events);
     start(&task_system);
     init_vk(&vk_context, window, width, height);
 
-    register_event_handler(&events, EVENT_CODE_MOUSE_MOVE, [width, height](const EventData &event_data)-> bool {
-        float x = event_data.f32[0];
-        float y = event_data.f32[1];
-        auto [origin, dir] = compute_ray_from_screen(camera, x, y, width, height);
+    register_event_handler(&events, EVENT_CODE_MOUSE_MOVE, [&](const EventData &event_data) -> bool {
+        float x_pos = event_data.f32[0];
+        float y_pos = event_data.f32[1];
+
+        auto [origin, dir] = compute_ray_from_screen(camera, x_pos, y_pos, width, height);
 
         // 检测是否在 gizmo 范围内
         if (is_gizmo_y_ring_hovered(origin, dir)) {
             registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f); // set ring color to red
+            return true; // Gizmo 处理了该事件
         } else {
             registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
         }
+        return false;
+    });
+
+    register_event_handler(&events, EVENT_CODE_MOUSE_SCROLL, [&](const EventData &event_data) -> bool {
+        float yoffset = event_data.f32[1];
+        camera.fov_y -= yoffset * glm::radians(5.0f);
+        camera.fov_y = glm::clamp(camera.fov_y, glm::radians(10.0f), glm::radians(120.0f));
         return true;
     });
 
@@ -462,7 +466,7 @@ int main() {
         }
         image_acquired_semaphores[image_index] = image_acquired_semaphore;
 
-        // Update 3D scene camera (index 0)
+        // Update scene camera (index 0)
         const glm::mat4 view = compute_view_matrix(camera);
         const glm::mat4 projection = compute_projection_matrix(camera);
 
@@ -596,8 +600,7 @@ int main() {
             clear_values[0].color = {.float32 = {0.2f, 0.6f, 0.4f, 1.0f}};
             clear_values[1].depthStencil = {.depth = 1.0f, .stencil = 0};
 
-            begin_render_pass(&vk_context, command_buffer, vk_context.render_pass,
-                              vk_context.framebuffers[image_index], window_width, window_height, clear_values, std::size(clear_values));
+            begin_render_pass(&vk_context, command_buffer, vk_context.render_pass, vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
 
             for (RenderQueueType queue_type : render_queue_order) {
                 auto queue_it = render_queue_pipeline_renderables.find(queue_type);
@@ -616,14 +619,14 @@ int main() {
                         const auto &renderables = pipeline_it->second;
                         if (renderables.empty()) { continue; }
 
-                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, window_width, window_height, cull_mode);
+                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, width, height, cull_mode);
                     }
                 } else {
                     // UI队列直接遍历所有pipeline（已在收集阶段完成z值排序）
                     for (const auto &[pipeline_key, renderables] : pipeline_renderables) {
                         if (renderables.empty()) { continue; }
 
-                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, window_width, window_height, cull_mode);
+                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, width, height, cull_mode);
                     }
                 }
             }
@@ -688,6 +691,8 @@ int main() {
     }
     descriptor_pools.clear();
     cleanup_vk(&vk_context);
+    shutdown_events(&events);
+    shutdown_inputs(&inputs);
     glfwDestroyWindow(window);
     glfwTerminate();
     JPH::UnregisterTypes();

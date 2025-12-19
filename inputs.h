@@ -21,7 +21,6 @@ void release_key(Inputs *inputs, int key);
 void press_mouse_button(Inputs *inputs, int button);
 void release_mouse_button(Inputs *inputs, int button);
 void move_mouse(Inputs *inputs, float x, float y);
-void scroll_mouse(Inputs *inputs, float x, float y);
 
 bool is_key_pressed(Inputs *inputs, int key);
 bool is_key_released(Inputs *inputs, int key);

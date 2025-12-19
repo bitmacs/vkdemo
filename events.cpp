@@ -1,5 +1,13 @@
 #include "events.h"
 
+void init_events(Events *events) {
+    // TODO
+}
+
+void shutdown_events(Events *events) {
+    // TODO
+}
+
 void register_event_handler(Events *events, EventCode event_code,
                             std::function<bool(const EventData &event_data)> &&handler) {
     events->event_handlers[event_code].push_back(std::move(handler));
