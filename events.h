@@ -24,7 +24,6 @@ struct Events {
 
 void init_events(Events *events);
 void shutdown_events(Events *events);
-void register_event_handler(Events *events, EventCode event_code,
-                            std::function<bool(const EventData &event_data)> &&handler);
+void register_event(Events *events, EventCode event_code, std::function<bool(const EventData &event_data)> &&handler);
 
 bool dispatch_event(Events *events, EventCode event_code, const EventData &event_data);

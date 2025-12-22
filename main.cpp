@@ -226,6 +226,12 @@ static glm::mat4 compute_transform_matrix(const Transform2D &transform) {
            * glm::scale(glm::mat4(1.0f), glm::vec3(transform.scale, 1.0f));
 }
 
+static bool is_point_in_ui_bounds(const Transform2D &transform, const Rect &rect, float mouse_x, float mouse_y) {
+    glm::vec2 min = glm::vec2(transform.position) + rect.min;
+    glm::vec2 max = glm::vec2(transform.position) + rect.max;
+    return mouse_x >= min.x && mouse_x <= max.x && mouse_y >= min.y && mouse_y <= max.y;
+}
+
 static PipelineKey get_pipeline_key(VkPrimitiveTopology primitive_topology, VkPolygonMode polygon_mode, bool depth_test_enabled) {
     if (primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || primitive_topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
         polygon_mode = VK_POLYGON_MODE_LINE; // polygon mode must be line for line list or line strip topology
@@ -293,25 +299,64 @@ int main() {
     start(&task_system);
     init_vk(&vk_context, window, width, height);
 
-    register_event_handler(&events, EVENT_CODE_MOUSE_MOVE, [&](const EventData &event_data) -> bool {
+    entt::entity hovered_ui_entity = entt::null;
+    bool is_y_ring_hovered = false;
+
+    register_event(&events, EVENT_CODE_MOUSE_MOVE, [&](const EventData &event_data) -> bool {
         float x_pos = event_data.f32[0];
         float y_pos = event_data.f32[1];
 
-        auto [origin, dir] = compute_ray_from_screen(camera, x_pos, y_pos, width, height);
-
-        // 检测是否在 gizmo 范围内
-        if (is_gizmo_y_ring_hovered(origin, dir)) {
-            registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f); // set ring color to red
-            return true; // Gizmo 处理了该事件
-        } else {
-            registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f); // set ring color to white
+        // 检查 ui 元素
+        auto ui_on_mouse_move = [&]() -> bool {
+            std::vector<std::pair<float, entt::entity>> ui_hits;
+            for (auto view = registry.view<Mesh, Transform2D, Material, Rect>(); auto entity: view) {
+                Transform2D &transform = view.get<Transform2D>(entity);
+                Rect &rect = view.get<Rect>(entity);
+                if (is_point_in_ui_bounds(transform, rect, x_pos, height - y_pos)) {
+                    ui_hits.push_back({transform.position.z, entity});
+                }
+            }
+            if (!ui_hits.empty()) {
+                std::sort(ui_hits.begin(), ui_hits.end(), [](const auto &a, const auto &b) {
+                    return a.first < b.first; // z 值小的显示在前面，优先响应事件
+                });
+                hovered_ui_entity = ui_hits[0].second;
+                registry.get<Material>(hovered_ui_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
+                return true;
+            }
+            if (hovered_ui_entity != entt::null) {
+                registry.get<Material>(hovered_ui_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
+                hovered_ui_entity = entt::null;
+            }
+            return false;
+        };
+        if (ui_on_mouse_move()) {
+            if (is_y_ring_hovered) {
+                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
+                is_y_ring_hovered = false;
+            }
+            return true;
         }
-        return false;
+
+        // 检查 gizmo
+        {
+            auto [origin, dir] = compute_ray_from_screen(camera, x_pos, y_pos, width, height);
+            if (is_gizmo_y_ring_hovered(origin, dir)) {
+                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
+                is_y_ring_hovered = true;
+                return true; // gizmo 处理了该事件
+            }
+            if (is_y_ring_hovered) {
+                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
+                is_y_ring_hovered = false;
+            }
+        }
+        return false; // 继续传递给 camera 等其他处理器
     });
 
-    register_event_handler(&events, EVENT_CODE_MOUSE_SCROLL, [&](const EventData &event_data) -> bool {
-        float yoffset = event_data.f32[1];
-        camera.fov_y -= yoffset * glm::radians(5.0f);
+    register_event(&events, EVENT_CODE_MOUSE_SCROLL, [&](const EventData &event_data) -> bool {
+        float y_offset = event_data.f32[1];
+        camera.fov_y -= y_offset * glm::radians(5.0f);
         camera.fov_y = glm::clamp(camera.fov_y, glm::radians(10.0f), glm::radians(120.0f));
         return true;
     });
@@ -439,6 +484,10 @@ int main() {
         auto &[position, scale] = registry.emplace<Transform2D>(entity);
         position = glm::vec3(quad_width * 0.5f + 20.0f, quad_height * 0.5f + 20.0f, 0.0f);
         scale = glm::vec2(1.0f, 1.0f);
+
+        auto &rect = registry.emplace<Rect>(entity);
+        rect.min = glm::vec2(-quad_width * 0.5f, -quad_height * 0.5f);
+        rect.max = glm::vec2(quad_width * 0.5f, quad_height * 0.5f);
 
         auto &material = registry.emplace<Material>(entity);
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
