@@ -98,33 +98,35 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
+        material.render_queue_type = RENDER_QUEUE_TYPE_SCENE;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        material.depth_test_enabled = true;
 
-        {
-            // 创建一个三角形（三个顶点，逆时针顺序）
-            JPH::Vec3 v1(-0.5f, -0.5f, 0.0f);
-            JPH::Vec3 v2( 0.5f, -0.5f, 0.0f);
-            JPH::Vec3 v3( 0.0f,  0.5f, 0.0f);
-            JPH::RefConst triangle = new JPH::TriangleShape(v1, v2, v3);
-
-            JPH::Vec3 ray_origin(origin.x, origin.y, origin.z);
-            JPH::Vec3 ray_direction(dir.x, dir.y, dir.z);
-            JPH::RayCast ray(ray_origin, ray_direction);
-
-            // 执行 ray cast
-            JPH::SubShapeIDCreator sub_shape_id_creator;
-            JPH::RayCastResult hit;
-            hit.mFraction = 100.0f; // 初始化为最大距离
-
-            if (triangle->CastRay(ray, sub_shape_id_creator, hit)) {
-                JPH::Vec3 hit_point = ray.GetPointOnRay(hit.mFraction);
-                std::cout << "命中三角形" << std::endl;
-                std::cout << "  命中点: (" << hit_point.GetX() << ", " << hit_point.GetY() << ", " << hit_point.GetZ() << ")" << std::endl;
-                std::cout << "  距离分数: " << hit.mFraction << std::endl;
-            } else {
-                std::cout << "未命中三角形" << std::endl;
-            }
-        }
+        // {
+        //     // 创建一个三角形（三个顶点，逆时针顺序）
+        //     JPH::Vec3 v1(-0.5f, -0.5f, 0.0f);
+        //     JPH::Vec3 v2( 0.5f, -0.5f, 0.0f);
+        //     JPH::Vec3 v3( 0.0f,  0.5f, 0.0f);
+        //     JPH::RefConst triangle = new JPH::TriangleShape(v1, v2, v3);
+        //
+        //     JPH::Vec3 ray_origin(origin.x, origin.y, origin.z);
+        //     JPH::Vec3 ray_direction(dir.x, dir.y, dir.z);
+        //     JPH::RayCast ray(ray_origin, ray_direction);
+        //
+        //     // 执行 ray cast
+        //     JPH::SubShapeIDCreator sub_shape_id_creator;
+        //     JPH::RayCastResult hit;
+        //     hit.mFraction = 100.0f; // 初始化为最大距离
+        //
+        //     if (triangle->CastRay(ray, sub_shape_id_creator, hit)) {
+        //         JPH::Vec3 hit_point = ray.GetPointOnRay(hit.mFraction);
+        //         std::cout << "命中三角形" << std::endl;
+        //         std::cout << "  命中点: (" << hit_point.GetX() << ", " << hit_point.GetY() << ", " << hit_point.GetZ() << ")" << std::endl;
+        //         std::cout << "  距离分数: " << hit.mFraction << std::endl;
+        //     } else {
+        //         std::cout << "未命中三角形" << std::endl;
+        //     }
+        // }
     }
 }
 
@@ -438,7 +440,9 @@ int main() {
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
+        material.render_queue_type = RENDER_QUEUE_TYPE_SCENE;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        material.depth_test_enabled = true;
     }
     {
         auto entity = registry.create();
@@ -453,7 +457,9 @@ int main() {
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
+        material.render_queue_type = RENDER_QUEUE_TYPE_SCENE;
         material.color = glm::vec3(0.7f, 0.65f, 0.6f); // 浅棕色地面颜色
+        material.depth_test_enabled = true;
     }
     {
         auto entity = registry.create();
@@ -468,9 +474,29 @@ int main() {
         scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
+        material.render_queue_type = RENDER_QUEUE_TYPE_GIZMO;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        material.depth_test_enabled = false;
 
         gizmo_y_ring_entity = entity;
+    }
+    // Y轴：从原点到上方的线段
+    {
+        auto entity = registry.create();
+
+        auto &[mesh_buffers_handle] = registry.emplace<Mesh>(entity);
+        MeshData mesh_data = generate_line_mesh_data(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.2f, 0.0f));
+        mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        auto &[position, orientation, scale] = registry.emplace<Transform>(entity);
+        position = glm::vec3(0.0f, 0.0f, 0.0f);
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.render_queue_type = RENDER_QUEUE_TYPE_GIZMO;
+        material.color = glm::vec3(0.0f, 1.0f, 0.0f); // 绿色表示Y轴
+        material.depth_test_enabled = false;
     }
     {
         auto entity = registry.create();
@@ -490,7 +516,9 @@ int main() {
         rect.max = glm::vec2(quad_width * 0.5f, quad_height * 0.5f);
 
         auto &material = registry.emplace<Material>(entity);
+        material.render_queue_type = RENDER_QUEUE_TYPE_UI;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        material.depth_test_enabled = false;
     }
 
     while (!glfwWindowShouldClose(window)) {
@@ -562,17 +590,16 @@ int main() {
         vkUpdateDescriptorSets(vk_context.device, 1, &write_descriptor_set, 0, nullptr);
 
         // 按渲染队列和Pipeline分组收集renderables
-        enum RenderQueueType {
-            RENDER_QUEUE_TYPE_SCENE,
-            RENDER_QUEUE_TYPE_UI,
-        };
         std::unordered_map<RenderQueueType, std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash>> render_queue_pipeline_renderables;
 
-        // 收集Scene实体（Mesh + Transform + Material）
+        // 统一收集 scene 和 gizmo 实体（Mesh + Transform + Material）
+        // 根据 Material.render_queue_type 分类到不同队列
         for (auto view = registry.view<Mesh, Transform, Material>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform &transform = view.get<Transform>(entity);
             Material &material = view.get<Material>(entity);
+
+            RenderQueueType queue_type = material.render_queue_type;
 
             std::lock_guard lock(mesh_buffers_registry.mutex);
             MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
@@ -581,17 +608,16 @@ int main() {
             add_ref(&frame_contexts[frame_index], mesh.mesh_buffers_handle);
             ++entry.ref_count;
 
-            // Scene使用深度测试
-            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, true);
-
-            render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_SCENE][pipeline_key].push_back({
+            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, material.depth_test_enabled);
+            render_queue_pipeline_renderables[queue_type][pipeline_key].push_back({
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
                 .model_matrix = compute_transform_matrix(transform),
                 .color = material.color,
             });
         }
 
-        // 收集UI实体（Mesh + Transform2D + Material）
+        // 收集 ui 实体（Mesh + Transform2D + Material）
+        // UI 实体总是使用 RENDER_QUEUE_TYPE_UI，但为了清晰，这里显式设置
         for (auto view = registry.view<Mesh, Transform2D, Material>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform2D &transform = view.get<Transform2D>(entity);
@@ -604,8 +630,7 @@ int main() {
             add_ref(&frame_contexts[frame_index], mesh.mesh_buffers_handle);
             ++entry.ref_count;
 
-            // UI禁用深度测试
-            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, false);
+            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, material.depth_test_enabled);
 
             render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_UI][pipeline_key].push_back({
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
@@ -627,13 +652,14 @@ int main() {
                 });
         }
 
-        // 定义渲染队列顺序（SCENE -> UI）
+        // 定义渲染队列顺序（SCENE -> GIZMO -> UI）
         const std::vector<RenderQueueType> render_queue_order = {
             RENDER_QUEUE_TYPE_SCENE,
+            RENDER_QUEUE_TYPE_GIZMO,
             RENDER_QUEUE_TYPE_UI,
         };
 
-        // 定义SCENE队列的Pipeline渲染顺序（减少状态切换）
+        // 定义 scene 队列的 pipeline 渲染顺序
         const std::vector<PipelineKey> scene_pipeline_render_order = {
             PipelineKey(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL, true),
             PipelineKey(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE, true),
@@ -658,9 +684,8 @@ int main() {
                 const auto &pipeline_renderables = queue_it->second;
                 uint32_t camera_index = (queue_type == RENDER_QUEUE_TYPE_UI) ? 1 : 0;
 
-                // SCENE队列按pipeline order顺序渲染，UI队列直接遍历
+                // scene 队列按 pipeline order 顺序渲染
                 if (queue_type == RENDER_QUEUE_TYPE_SCENE) {
-                    // 按预定义的pipeline顺序渲染
                     for (const PipelineKey &pipeline_key : scene_pipeline_render_order) {
                         auto pipeline_it = pipeline_renderables.find(pipeline_key);
                         if (pipeline_it == pipeline_renderables.end()) { continue; }
@@ -671,7 +696,9 @@ int main() {
                         render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, width, height, cull_mode);
                     }
                 } else {
-                    // UI队列直接遍历所有pipeline（已在收集阶段完成z值排序）
+                    // Gizmo和UI队列直接遍历所有pipeline
+                    // Gizmo队列：按pipeline顺序渲染（内部元素已按render_order排序，如果需要）
+                    // UI队列：已在收集阶段完成z值排序
                     for (const auto &[pipeline_key, renderables] : pipeline_renderables) {
                         if (renderables.empty()) { continue; }
 

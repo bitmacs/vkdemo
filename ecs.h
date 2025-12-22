@@ -12,8 +12,16 @@ struct Transform {
     glm::vec3 scale;
 };
 
+enum RenderQueueType {
+    RENDER_QUEUE_TYPE_SCENE,
+    RENDER_QUEUE_TYPE_GIZMO,
+    RENDER_QUEUE_TYPE_UI,
+};
+
 struct Material {
+    RenderQueueType render_queue_type;
     glm::vec3 color;
+    bool depth_test_enabled;
 };
 
 struct Transform2D {

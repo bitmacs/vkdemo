@@ -617,6 +617,10 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE, false);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE, true);
     create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE, true);
+
+    // typically used for gizmos
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE, false);
+    create_pipeline(context, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE, false);
 }
 
 void cleanup_vk(VkContext *context) {
