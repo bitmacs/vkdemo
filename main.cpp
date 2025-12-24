@@ -33,7 +33,7 @@ VkContext vk_context = {};
 MeshBuffersRegistry mesh_buffers_registry = {};
 Camera camera = {};
 VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
-VkCullModeFlags cull_mode = VK_CULL_MODE_BACK_BIT;
+VkCullModeFlags cull_mode = VK_CULL_MODE_NONE;
 entt::registry registry;
 entt::entity gizmo_y_ring_entity = entt::null;
 
@@ -98,10 +98,11 @@ static void glfw_mouse_button_callback(GLFWwindow *window, int button, int actio
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.render_queue_type = RENDER_QUEUE_TYPE_SCENE;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
         material.depth_test_enabled = true;
 
+        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
+        render_layer.render_layer_type = RENDER_LAYER_TYPE_SCENE;
         // {
         //     // 创建一个三角形（三个顶点，逆时针顺序）
         //     JPH::Vec3 v1(-0.5f, -0.5f, 0.0f);
@@ -223,12 +224,7 @@ static glm::mat4 compute_transform_matrix(const Transform &transform) {
     return translation * rotation * scale;
 }
 
-static glm::mat4 compute_transform_matrix(const Transform2D &transform) {
-    return glm::translate(glm::mat4(1.0f), transform.position)
-           * glm::scale(glm::mat4(1.0f), glm::vec3(transform.scale, 1.0f));
-}
-
-static bool is_point_in_ui_bounds(const Transform2D &transform, const Rect &rect, float mouse_x, float mouse_y) {
+static bool is_point_in_ui_bounds(const Transform &transform, const Rect &rect, float mouse_x, float mouse_y) {
     glm::vec2 min = glm::vec2(transform.position) + rect.min;
     glm::vec2 max = glm::vec2(transform.position) + rect.max;
     return mouse_x >= min.x && mouse_x <= max.x && mouse_y >= min.y && mouse_y <= max.y;
@@ -308,16 +304,16 @@ int main() {
         float x_pos = event_data.f32[0];
         float y_pos = event_data.f32[1];
 
-        // 检查 ui 元素
-        auto ui_on_mouse_move = [&]() -> bool {
+        // 检查 ui 层元素
+        auto ui_layer_on_mouse_move = [&]() -> bool {
             std::vector<std::pair<float, entt::entity>> ui_hits;
-            for (auto view = registry.view<Mesh, Transform2D, Material, Rect>(); auto entity: view) {
-                Transform2D &transform = view.get<Transform2D>(entity);
-                Rect &rect = view.get<Rect>(entity);
-                if (is_point_in_ui_bounds(transform, rect, x_pos, height - y_pos)) {
-                    ui_hits.push_back({transform.position.z, entity});
+            registry.view<Mesh, Transform, RenderLayer, Rect>().each([&](auto entity, Mesh &mesh, Transform &transform, RenderLayer &layer, Rect &rect) {
+                if (layer.render_layer_type == RENDER_LAYER_TYPE_UI) {
+                    if (is_point_in_ui_bounds(transform, rect, x_pos, height - y_pos)) {
+                        ui_hits.emplace_back(transform.position.z, entity);
+                    }
                 }
-            }
+            });
             if (!ui_hits.empty()) {
                 std::sort(ui_hits.begin(), ui_hits.end(), [](const auto &a, const auto &b) {
                     return a.first < b.first; // z 值小的显示在前面，优先响应事件
@@ -332,15 +328,14 @@ int main() {
             }
             return false;
         };
-        if (ui_on_mouse_move()) {
+        if (ui_layer_on_mouse_move()) {
             if (is_y_ring_hovered) {
                 registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
                 is_y_ring_hovered = false;
             }
             return true;
         }
-
-        // 检查 gizmo
+        // 检查 gizmo 层元素
         {
             auto [origin, dir] = compute_ray_from_screen(camera, x_pos, y_pos, width, height);
             if (is_gizmo_y_ring_hovered(origin, dir)) {
@@ -440,9 +435,11 @@ int main() {
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.render_queue_type = RENDER_QUEUE_TYPE_SCENE;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
         material.depth_test_enabled = true;
+
+        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
+        render_layer.render_layer_type = RENDER_LAYER_TYPE_SCENE;
     }
     {
         auto entity = registry.create();
@@ -457,9 +454,11 @@ int main() {
         transform.scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.render_queue_type = RENDER_QUEUE_TYPE_SCENE;
         material.color = glm::vec3(0.7f, 0.65f, 0.6f); // 浅棕色地面颜色
         material.depth_test_enabled = true;
+
+        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
+        render_layer.render_layer_type = RENDER_LAYER_TYPE_SCENE;
     }
     {
         auto entity = registry.create();
@@ -474,9 +473,11 @@ int main() {
         scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.render_queue_type = RENDER_QUEUE_TYPE_GIZMO;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
         material.depth_test_enabled = false;
+
+        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
+        render_layer.render_layer_type = RENDER_LAYER_TYPE_GIZMO;
 
         gizmo_y_ring_entity = entity;
     }
@@ -494,9 +495,11 @@ int main() {
         scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.render_queue_type = RENDER_QUEUE_TYPE_GIZMO;
         material.color = glm::vec3(0.0f, 1.0f, 0.0f); // 绿色表示Y轴
         material.depth_test_enabled = false;
+
+        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
+        render_layer.render_layer_type = RENDER_LAYER_TYPE_GIZMO;
     }
     {
         auto entity = registry.create();
@@ -507,18 +510,21 @@ int main() {
         MeshData mesh_data = generate_quad_mesh_data(quad_width, quad_height);
         mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
 
-        auto &[position, scale] = registry.emplace<Transform2D>(entity);
+        auto &[position, orientation, scale] = registry.emplace<Transform>(entity);
         position = glm::vec3(quad_width * 0.5f + 20.0f, quad_height * 0.5f + 20.0f, 0.0f);
-        scale = glm::vec2(1.0f, 1.0f);
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
         auto &rect = registry.emplace<Rect>(entity);
         rect.min = glm::vec2(-quad_width * 0.5f, -quad_height * 0.5f);
         rect.max = glm::vec2(quad_width * 0.5f, quad_height * 0.5f);
 
         auto &material = registry.emplace<Material>(entity);
-        material.render_queue_type = RENDER_QUEUE_TYPE_UI;
         material.color = glm::vec3(1.0f, 1.0f, 1.0f);
         material.depth_test_enabled = false;
+
+        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
+        render_layer.render_layer_type = RENDER_LAYER_TYPE_UI;
     }
 
     while (!glfwWindowShouldClose(window)) {
@@ -589,39 +595,18 @@ int main() {
 
         vkUpdateDescriptorSets(vk_context.device, 1, &write_descriptor_set, 0, nullptr);
 
-        // 按渲染队列和Pipeline分组收集renderables
-        std::unordered_map<RenderQueueType, std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash>> render_queue_pipeline_renderables;
+        // 收集所有需要渲染的物体，分配到不同 render layer 中
+        // 对每个 render layer 内的 renderable 按各自需要进行排序
+        // 整体上，按 pipeline key 分组
+        // ui layer 额外还需要在每组 pipeline 内按 renderable 的 z 值排序，z 值大的先渲染
 
-        // 统一收集 scene 和 gizmo 实体（Mesh + Transform + Material）
-        // 根据 Material.render_queue_type 分类到不同队列
-        for (auto view = registry.view<Mesh, Transform, Material>(); auto entity: view) {
+        std::unordered_map<RenderLayerType, std::unordered_map<PipelineKey, std::vector<Renderable>, PipelineKeyHash>> render_layer_pipeline_renderables;
+
+        for (auto view = registry.view<Mesh, Transform, Material, RenderLayer>(); auto entity: view) {
             Mesh &mesh = view.get<Mesh>(entity);
             Transform &transform = view.get<Transform>(entity);
             Material &material = view.get<Material>(entity);
-
-            RenderQueueType queue_type = material.render_queue_type;
-
-            std::lock_guard lock(mesh_buffers_registry.mutex);
-            MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
-            if (!entry.uploaded) { continue; }
-
-            add_ref(&frame_contexts[frame_index], mesh.mesh_buffers_handle);
-            ++entry.ref_count;
-
-            PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, material.depth_test_enabled);
-            render_queue_pipeline_renderables[queue_type][pipeline_key].push_back({
-                .mesh_buffers_handle = mesh.mesh_buffers_handle,
-                .model_matrix = compute_transform_matrix(transform),
-                .color = material.color,
-            });
-        }
-
-        // 收集 ui 实体（Mesh + Transform2D + Material）
-        // UI 实体总是使用 RENDER_QUEUE_TYPE_UI，但为了清晰，这里显式设置
-        for (auto view = registry.view<Mesh, Transform2D, Material>(); auto entity: view) {
-            Mesh &mesh = view.get<Mesh>(entity);
-            Transform2D &transform = view.get<Transform2D>(entity);
-            Material &material = view.get<Material>(entity);
+            RenderLayer &render_layer = view.get<RenderLayer>(entity);
 
             std::lock_guard lock(mesh_buffers_registry.mutex);
             MeshBuffersEntry &entry = mesh_buffers_registry.entries[mesh.mesh_buffers_handle];
@@ -631,40 +616,26 @@ int main() {
             ++entry.ref_count;
 
             PipelineKey pipeline_key = get_pipeline_key(entry.mesh_buffers.primitive_topology, polygon_mode, material.depth_test_enabled);
-
-            render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_UI][pipeline_key].push_back({
+            Renderable renderable = {
                 .mesh_buffers_handle = mesh.mesh_buffers_handle,
                 .model_matrix = compute_transform_matrix(transform),
                 .color = material.color,
-            });
+            };
+            render_layer_pipeline_renderables[render_layer.render_layer_type][pipeline_key].emplace_back(renderable);
         }
 
-        // UI队列按z值排序（在收集阶段完成，避免渲染时重复排序）
-        auto &ui_pipeline_renderables = render_queue_pipeline_renderables[RENDER_QUEUE_TYPE_UI];
-        for (auto &[pipeline_key, renderables] : ui_pipeline_renderables) {
-            // 按z值排序：从model_matrix的平移向量中提取z值，z值大的先渲染
-            std::sort(renderables.begin(), renderables.end(),
-                [](const Renderable &a, const Renderable &b) {
-                    // model_matrix[3]是平移向量，[3][2]是z分量
-                    float z_a = a.model_matrix[3][2];
-                    float z_b = b.model_matrix[3][2];
-                    return z_a > z_b; // z值大的先渲染（显示在后面）
+        {
+            for (auto &[pipeline_key, renderables] : render_layer_pipeline_renderables[RENDER_LAYER_TYPE_UI]) {
+                std::sort(renderables.begin(), renderables.end(), [](const Renderable &a, const Renderable &b) {
+                    return a.model_matrix[3][2] > b.model_matrix[3][2];
                 });
+            }
         }
 
-        // 定义渲染队列顺序（SCENE -> GIZMO -> UI）
-        const std::vector<RenderQueueType> render_queue_order = {
-            RENDER_QUEUE_TYPE_SCENE,
-            RENDER_QUEUE_TYPE_GIZMO,
-            RENDER_QUEUE_TYPE_UI,
-        };
-
-        // 定义 scene 队列的 pipeline 渲染顺序
-        const std::vector<PipelineKey> scene_pipeline_render_order = {
-            PipelineKey(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_FILL, true),
-            PipelineKey(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_POLYGON_MODE_LINE, true),
-            PipelineKey(VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, VK_POLYGON_MODE_LINE, true),
-            PipelineKey(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_POLYGON_MODE_LINE, true),
+        const std::vector<RenderLayerType> render_layer_render_order = {
+            RENDER_LAYER_TYPE_SCENE,
+            RENDER_LAYER_TYPE_GIZMO,
+            RENDER_LAYER_TYPE_UI,
         };
 
         VkCommandBuffer command_buffer = command_buffers[frame_index];
@@ -677,33 +648,16 @@ int main() {
 
             begin_render_pass(&vk_context, command_buffer, vk_context.render_pass, vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
 
-            for (RenderQueueType queue_type : render_queue_order) {
-                auto queue_it = render_queue_pipeline_renderables.find(queue_type);
-                if (queue_it == render_queue_pipeline_renderables.end()) { continue; }
+            for (RenderLayerType layer_type : render_layer_render_order) {
+                auto layer_it = render_layer_pipeline_renderables.find(layer_type);
+                if (layer_it == render_layer_pipeline_renderables.end()) { continue; }
 
-                const auto &pipeline_renderables = queue_it->second;
-                uint32_t camera_index = (queue_type == RENDER_QUEUE_TYPE_UI) ? 1 : 0;
+                const auto &pipeline_renderables = layer_it->second;
+                uint32_t camera_index = (layer_type == RENDER_LAYER_TYPE_UI) ? 1 : 0;
 
-                // scene 队列按 pipeline order 顺序渲染
-                if (queue_type == RENDER_QUEUE_TYPE_SCENE) {
-                    for (const PipelineKey &pipeline_key : scene_pipeline_render_order) {
-                        auto pipeline_it = pipeline_renderables.find(pipeline_key);
-                        if (pipeline_it == pipeline_renderables.end()) { continue; }
-
-                        const auto &renderables = pipeline_it->second;
-                        if (renderables.empty()) { continue; }
-
-                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, width, height, cull_mode);
-                    }
-                } else {
-                    // Gizmo和UI队列直接遍历所有pipeline
-                    // Gizmo队列：按pipeline顺序渲染（内部元素已按render_order排序，如果需要）
-                    // UI队列：已在收集阶段完成z值排序
-                    for (const auto &[pipeline_key, renderables] : pipeline_renderables) {
-                        if (renderables.empty()) { continue; }
-
-                        render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, width, height, cull_mode);
-                    }
+                for (const auto &[pipeline_key, renderables] : pipeline_renderables) {
+                    if (renderables.empty()) { continue; }
+                    render_pipeline_renderables(command_buffer, &vk_context, &mesh_buffers_registry, descriptor_sets[frame_index], pipeline_key, renderables, camera_index, width, height, cull_mode);
                 }
             }
 
