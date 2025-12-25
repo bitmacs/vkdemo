@@ -64,24 +64,30 @@ struct VkContext {
     std::vector<VkImage> swapchain_images;
     std::vector<VkImageView> swapchain_image_views;
     VkCommandPool command_pool;
-    VkRenderPass render_pass;
+    VkRenderPass render_pass; // 离屏渲染的 render pass
     VkFormat depth_image_format;
     std::vector<VkImage> depth_images;
     std::vector<VkDeviceMemory> depth_image_memories;
     std::vector<VkImageView> depth_image_views;
+
+    // 离屏渲染资源（每个 in-flight 帧一份）
+    std::vector<VkImage> color_images;
+    std::vector<VkDeviceMemory> color_image_memories;
+    std::vector<VkImageView> color_image_views;
     std::vector<VkFramebuffer> framebuffers;
+
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
     std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> pipelines;
 };
 
-void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height);
+void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height, uint32_t max_frames_in_flight);
 
 void cleanup_vk(VkContext *context);
 
 void acquire_next_image(VkContext *context, VkSemaphore image_acquired_semaphore, uint32_t *image_index);
 
-void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore,
+void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore, VkPipelineStageFlags wait_dst_stage,
             VkSemaphore signal_semaphore, VkFence fence);
 
 void present(VkContext *context, VkSemaphore wait_semaphore, uint32_t image_index);

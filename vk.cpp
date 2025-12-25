@@ -252,6 +252,11 @@ static void create_swapchain(VkContext *context, uint32_t width, uint32_t height
         min_image_count = surface_capabilities.maxImageCount;
     }
 
+    // 检查 surface 是否支持 TRANSFER_DST_BIT（用于 blit 到 swapchain）
+    VkImageUsageFlags image_usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    assert(surface_capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT && "surface does not support TRANSFER_DST_BIT");
+    image_usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
     VkSwapchainCreateInfoKHR swapchain_create_info = {};
     swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchain_create_info.surface = context->surface;
@@ -260,7 +265,7 @@ static void create_swapchain(VkContext *context, uint32_t width, uint32_t height
     swapchain_create_info.imageColorSpace = surface_color_space;
     swapchain_create_info.imageExtent = {width, height};
     swapchain_create_info.imageArrayLayers = 1;
-    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swapchain_create_info.imageUsage = image_usage;
     swapchain_create_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     swapchain_create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
@@ -323,7 +328,7 @@ static void create_render_pass(VkContext *context) {
     color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL; // 用于 blit
 
     VkAttachmentDescription depth_attachment = {};
     depth_attachment.format = context->depth_image_format;
@@ -361,13 +366,58 @@ static void create_render_pass(VkContext *context) {
     assert(result == VK_SUCCESS);
 }
 
-static void create_framebuffers(VkContext *context, uint32_t width, uint32_t height) {
-    {
-        // create depth images
-        context->depth_images.resize(context->swapchain_image_count);
-        context->depth_image_memories.resize(context->swapchain_image_count);
-        context->depth_image_views.resize(context->swapchain_image_count);
-        for (size_t i = 0; i < context->swapchain_image_count; ++i) {
+static void create_offscreen_resources(VkContext *context, uint32_t width, uint32_t height, uint32_t frame_count) {
+    // 为每个 in-flight 帧创建离屏资源
+    context->color_images.resize(frame_count);
+    context->color_image_memories.resize(frame_count);
+    context->color_image_views.resize(frame_count);
+    context->depth_images.resize(frame_count);
+    context->depth_image_memories.resize(frame_count);
+    context->depth_image_views.resize(frame_count);
+    context->framebuffers.resize(frame_count);
+
+    for (uint32_t i = 0; i < frame_count; ++i) {
+        {
+            VkImageCreateInfo image_create_info = {};
+            image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            image_create_info.imageType = VK_IMAGE_TYPE_2D;
+            image_create_info.format = context->surface_format;
+            image_create_info.extent = {width, height, 1};
+            image_create_info.mipLevels = 1;
+            image_create_info.arrayLayers = 1;
+            image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+            image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+            image_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+            image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            VkResult result = vkCreateImage(context->device, &image_create_info, nullptr, &context->color_images[i]);
+            assert(result == VK_SUCCESS);
+
+            VkMemoryRequirements memory_requirements;
+            vkGetImageMemoryRequirements(context->device, context->color_images[i], &memory_requirements);
+            uint32_t memory_type_index = UINT32_MAX;
+            get_memory_type_index(context, memory_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index);
+            allocate_memory(context, memory_requirements.size, memory_type_index, &context->color_image_memories[i]);
+            vkBindImageMemory(context->device, context->color_images[i], context->color_image_memories[i], 0);
+
+            VkImageViewCreateInfo image_view_create_info = {};
+            image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            image_view_create_info.image = context->color_images[i];
+            image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            image_view_create_info.format = context->surface_format;
+            image_view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            image_view_create_info.subresourceRange.baseMipLevel = 0;
+            image_view_create_info.subresourceRange.levelCount = 1;
+            image_view_create_info.subresourceRange.baseArrayLayer = 0;
+            image_view_create_info.subresourceRange.layerCount = 1;
+            result = vkCreateImageView(context->device, &image_view_create_info, nullptr, &context->color_image_views[i]);
+            assert(result == VK_SUCCESS);
+        }
+        {
             VkImageCreateInfo image_create_info = {};
             image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             image_create_info.imageType = VK_IMAGE_TYPE_2D;
@@ -386,8 +436,7 @@ static void create_framebuffers(VkContext *context, uint32_t width, uint32_t hei
             VkMemoryRequirements memory_requirements;
             vkGetImageMemoryRequirements(context->device, context->depth_images[i], &memory_requirements);
             uint32_t memory_type_index = UINT32_MAX;
-            get_memory_type_index(context, memory_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                  &memory_type_index);
+            get_memory_type_index(context, memory_requirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &memory_type_index);
             allocate_memory(context, memory_requirements.size, memory_type_index, &context->depth_image_memories[i]);
             vkBindImageMemory(context->device, context->depth_images[i], context->depth_image_memories[i], 0);
 
@@ -405,29 +454,24 @@ static void create_framebuffers(VkContext *context, uint32_t width, uint32_t hei
             image_view_create_info.subresourceRange.levelCount = 1;
             image_view_create_info.subresourceRange.baseArrayLayer = 0;
             image_view_create_info.subresourceRange.layerCount = 1;
-            result = vkCreateImageView(context->device, &image_view_create_info, nullptr,
-                                       &context->depth_image_views[i]);
+            result = vkCreateImageView(context->device, &image_view_create_info, nullptr, &context->depth_image_views[i]);
             assert(result == VK_SUCCESS);
         }
-    }
+        {
+            VkImageView attachments[2] = {context->color_image_views[i], context->depth_image_views[i]};
 
-    context->framebuffers.resize(context->swapchain_image_count);
+            VkFramebufferCreateInfo framebuffer_create_info = {};
+            framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebuffer_create_info.renderPass = context->render_pass;
+            framebuffer_create_info.attachmentCount = std::size(attachments);
+            framebuffer_create_info.pAttachments = attachments;
+            framebuffer_create_info.width = width;
+            framebuffer_create_info.height = height;
+            framebuffer_create_info.layers = 1;
 
-    for (size_t i = 0; i < context->swapchain_image_views.size(); ++i) {
-        VkImageView attachments[2] = {context->swapchain_image_views[i], context->depth_image_views[i]};
-
-        VkFramebufferCreateInfo framebuffer_create_info = {};
-        framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebuffer_create_info.renderPass = context->render_pass;
-        framebuffer_create_info.attachmentCount = std::size(attachments);
-        framebuffer_create_info.pAttachments = attachments;
-        framebuffer_create_info.width = width;
-        framebuffer_create_info.height = height;
-        framebuffer_create_info.layers = 1;
-
-        VkResult result = vkCreateFramebuffer(context->device, &framebuffer_create_info, nullptr,
-                                              &context->framebuffers[i]);
-        assert(result == VK_SUCCESS);
+            VkResult result = vkCreateFramebuffer(context->device, &framebuffer_create_info, nullptr, &context->framebuffers[i]);
+            assert(result == VK_SUCCESS);
+        }
     }
 }
 
@@ -599,7 +643,7 @@ static void create_pipeline(VkContext *context, VkPrimitiveTopology primitive_to
     vkDestroyShaderModule(context->device, fragment_shader_module, nullptr);
 }
 
-void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height) {
+void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t height, uint32_t max_frames_in_flight) {
     create_instance(context);
     create_surface(context, window);
     pick_physical_device(context);
@@ -607,7 +651,7 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     create_swapchain(context, width, height);
     context->depth_image_format = VK_FORMAT_D16_UNORM;
     create_render_pass(context);
-    create_framebuffers(context, width, height);
+    create_offscreen_resources(context, width, height, max_frames_in_flight);
     create_command_pool(context);
     create_descriptor_set_layout(context);
     create_pipeline_layout(context, sizeof(InstanceConstants));
@@ -631,10 +675,19 @@ void cleanup_vk(VkContext *context) {
     vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
     vkDestroyCommandPool(context->device, context->command_pool, nullptr);
+    // 清理离屏资源
     for (size_t i = 0; i < context->framebuffers.size(); ++i) {
         vkDestroyFramebuffer(context->device, context->framebuffers[i], nullptr);
     }
     context->framebuffers.clear();
+    for (size_t i = 0; i < context->color_images.size(); ++i) {
+        vkDestroyImageView(context->device, context->color_image_views[i], nullptr);
+        vkFreeMemory(context->device, context->color_image_memories[i], nullptr);
+        vkDestroyImage(context->device, context->color_images[i], nullptr);
+    }
+    context->color_image_views.clear();
+    context->color_image_memories.clear();
+    context->color_images.clear();
     for (size_t i = 0; i < context->depth_image_views.size(); ++i) {
         vkDestroyImageView(context->device, context->depth_image_views[i], nullptr);
         vkFreeMemory(context->device, context->depth_image_memories[i], nullptr);
@@ -663,10 +716,8 @@ void acquire_next_image(VkContext *context, VkSemaphore image_acquired_semaphore
     // assert(result == VK_SUCCESS);
 }
 
-void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore,
+void submit(VkContext *context, VkCommandBuffer command_buffer, VkSemaphore wait_semaphore, VkPipelineStageFlags wait_dst_stage,
             VkSemaphore signal_semaphore, VkFence fence) {
-    VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.waitSemaphoreCount = 1;

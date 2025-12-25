@@ -295,7 +295,7 @@ int main() {
     init_inputs(&inputs);
     init_events(&events);
     start(&task_system);
-    init_vk(&vk_context, window, width, height);
+    init_vk(&vk_context, window, width, height, MAX_FRAMES_IN_FLIGHT);
 
     entt::entity hovered_ui_entity = entt::null;
     bool is_y_ring_hovered = false;
@@ -646,7 +646,7 @@ int main() {
             clear_values[0].color = {.float32 = {0.2f, 0.6f, 0.4f, 1.0f}};
             clear_values[1].depthStencil = {.depth = 1.0f, .stencil = 0};
 
-            begin_render_pass(&vk_context, command_buffer, vk_context.render_pass, vk_context.framebuffers[image_index], width, height, clear_values, std::size(clear_values));
+            begin_render_pass(&vk_context, command_buffer, vk_context.render_pass, vk_context.framebuffers[frame_index], width, height, clear_values, std::size(clear_values));
 
             for (RenderLayerType layer_type : render_layer_render_order) {
                 auto layer_it = render_layer_pipeline_renderables.find(layer_type);
@@ -662,12 +662,81 @@ int main() {
             }
 
             end_render_pass(&vk_context, command_buffer);
+
+            // blit offscreen color image to swapchain image
+            {
+                // 转换离屏 image layout 为 TRANSFER_SRC_OPTIMAL
+                VkImageMemoryBarrier src_barrier = {};
+                src_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                src_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                src_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                src_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                src_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                src_barrier.image = vk_context.color_images[frame_index];
+                src_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                src_barrier.subresourceRange.baseMipLevel = 0;
+                src_barrier.subresourceRange.levelCount = 1;
+                src_barrier.subresourceRange.baseArrayLayer = 0;
+                src_barrier.subresourceRange.layerCount = 1;
+                src_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                src_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &src_barrier);
+
+                // 转换 swapchain image layout 为 TRANSFER_DST_OPTIMAL
+                VkImageMemoryBarrier dst_barrier = {};
+                dst_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                dst_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // acquire 后通常是 UNDEFINED
+                dst_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                dst_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                dst_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                dst_barrier.image = vk_context.swapchain_images[image_index];
+                dst_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                dst_barrier.subresourceRange.baseMipLevel = 0;
+                dst_barrier.subresourceRange.levelCount = 1;
+                dst_barrier.subresourceRange.baseArrayLayer = 0;
+                dst_barrier.subresourceRange.layerCount = 1;
+                dst_barrier.srcAccessMask = 0;
+                dst_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &dst_barrier);
+
+                VkImageBlit blit_region = {};
+                blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                blit_region.srcSubresource.mipLevel = 0;
+                blit_region.srcSubresource.baseArrayLayer = 0;
+                blit_region.srcSubresource.layerCount = 1;
+                blit_region.srcOffsets[0] = {0, 0, 0};
+                blit_region.srcOffsets[1] = {(int32_t) width, (int32_t) height, 1};
+                blit_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                blit_region.dstSubresource.mipLevel = 0;
+                blit_region.dstSubresource.baseArrayLayer = 0;
+                blit_region.dstSubresource.layerCount = 1;
+                blit_region.dstOffsets[0] = {0, 0, 0};
+                blit_region.dstOffsets[1] = {(int32_t) width, (int32_t) height, 1};
+                vkCmdBlitImage(command_buffer, vk_context.color_images[frame_index], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk_context.swapchain_images[image_index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit_region, VK_FILTER_LINEAR);
+
+                // 转换 swapchain image layout 为 PRESENT_SRC_KHR
+                VkImageMemoryBarrier present_barrier = {};
+                present_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                present_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                present_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                present_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                present_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                present_barrier.image = vk_context.swapchain_images[image_index];
+                present_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                present_barrier.subresourceRange.baseMipLevel = 0;
+                present_barrier.subresourceRange.levelCount = 1;
+                present_barrier.subresourceRange.baseArrayLayer = 0;
+                present_barrier.subresourceRange.layerCount = 1;
+                present_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                present_barrier.dstAccessMask = 0; // present 操作不需要特定的 access mask
+                vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &present_barrier);
+            }
         }
 
         end_command_buffer(&vk_context, command_buffer);
 
         VkSemaphore render_complete_semaphore = semaphore_pool.acquire_semaphore(&vk_context);
-        submit(&vk_context, command_buffer, image_acquired_semaphore, render_complete_semaphore, fences[frame_index]);
+        submit(&vk_context, command_buffer, image_acquired_semaphore, VK_PIPELINE_STAGE_TRANSFER_BIT, render_complete_semaphore, fences[frame_index]);
         if (render_complete_semaphores[image_index] != VK_NULL_HANDLE) {
             semaphore_pool.release_semaphore(render_complete_semaphores[image_index]);
         }
