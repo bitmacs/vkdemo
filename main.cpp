@@ -36,6 +36,8 @@ VkPolygonMode polygon_mode = VK_POLYGON_MODE_FILL;
 VkCullModeFlags cull_mode = VK_CULL_MODE_NONE;
 entt::registry registry;
 entt::entity gizmo_y_ring_entity = entt::null;
+entt::entity gizmo_y_axis_entity = entt::null;
+entt::entity gizmo_y_axis_cone_entity = entt::null;
 
 static void glfw_error_callback(int error, const char *description) {
     assert(false);
@@ -217,6 +219,61 @@ static bool is_gizmo_y_ring_hovered(const glm::vec3 &origin, const glm::vec3 &di
     return hit ? true : false;
 }
 
+static bool is_gizmo_y_axis_hovered(const glm::vec3 &origin, const glm::vec3 &dir) {
+    // Y轴线段：从 (0, 0, 0) 到 (0, 1.2, 0)
+    // Y轴箭头（cone）：底部在 (0, 1.2, 0)，顶部在 (0, 1.35, 0)，高度 0.15，底部半径 0.05
+    // 将整个 y axis（线段 + cone）视为一个整体圆柱体进行检测
+    // 圆柱体底部在 (0, 0, 0)，顶部在 (0, 1.35, 0)，高度为 1.35，半径使用 cone 的底部半径 0.05
+    float y_axis_radius = 0.05f; // 使用 cone 的底部半径
+    float y_axis_height = 1.35f; // 线段长度 1.2 + cone 高度 0.15
+
+    glm::vec3 base_center = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 top_center = glm::vec3(0.0f, y_axis_height, 0.0f);
+    glm::vec3 axis = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    // 检测圆柱侧面
+    std::optional<RayCylinderHit> side_hit = ray_cylinder_side_intersection(
+        Ray{origin, dir},
+        Cylinder{
+            base_center,  // 底部中心点
+            axis,         // Y轴方向
+            y_axis_radius,// 半径
+            y_axis_height // 高度
+        }
+    );
+    if (side_hit) {
+        return true;
+    }
+
+    // 检测底部圆盘
+    std::optional<float> bottom_disk_t = ray_disk_intersection(
+        Ray{origin, dir},
+        Disk{
+            base_center,  // 底部中心点
+            -axis,        // 法向量向下（从底部看，法向量指向外部）
+            y_axis_radius // 半径
+        }
+    );
+    if (bottom_disk_t) {
+        return true;
+    }
+
+    // 检测顶部圆盘
+    std::optional<float> top_disk_t = ray_disk_intersection(
+        Ray{origin, dir},
+        Disk{
+            top_center,   // 顶部中心点
+            axis,         // 法向量向上（从顶部看，法向量指向外部）
+            y_axis_radius // 半径
+        }
+    );
+    if (top_disk_t) {
+        return true;
+    }
+
+    return false;
+}
+
 static glm::mat4 compute_transform_matrix(const Transform &transform) {
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), transform.position);
     glm::mat4 rotation = glm::mat4_cast(transform.orientation);
@@ -299,6 +356,7 @@ int main() {
 
     entt::entity hovered_ui_entity = entt::null;
     bool is_y_ring_hovered = false;
+    bool is_y_axis_hovered = false;
 
     register_event(&events, EVENT_CODE_MOUSE_MOVE, [&](const EventData &event_data) -> bool {
         float x_pos = event_data.f32[0];
@@ -333,11 +391,36 @@ int main() {
                 registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
                 is_y_ring_hovered = false;
             }
+            if (is_y_axis_hovered) {
+                registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                is_y_axis_hovered = false;
+            }
             return true;
         }
         // 检查 gizmo 层元素
         {
             auto [origin, dir] = compute_ray_from_screen(camera, x_pos, y_pos, width, height);
+
+            // 先检查 y axis（优先级更高，因为它是更细的元素）
+            if (is_gizmo_y_axis_hovered(origin, dir)) {
+                registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
+                registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
+                is_y_axis_hovered = true;
+                // 如果之前 y ring 是悬浮状态，需要重置
+                if (is_y_ring_hovered) {
+                    registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
+                    is_y_ring_hovered = false;
+                }
+                return true; // gizmo 处理了该事件
+            }
+            if (is_y_axis_hovered) {
+                registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                is_y_axis_hovered = false;
+            }
+
+            // 再检查 y ring
             if (is_gizmo_y_ring_hovered(origin, dir)) {
                 registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
                 is_y_ring_hovered = true;
@@ -500,6 +583,8 @@ int main() {
 
         auto &[render_layer_type] = registry.emplace<RenderLayer>(entity);
         render_layer_type = RENDER_LAYER_TYPE_GIZMO;
+
+        gizmo_y_axis_entity = entity;
     }
     // Y轴箭头：在Y轴末端添加圆锥体箭头
     {
@@ -523,6 +608,8 @@ int main() {
 
         auto &[render_layer_type] = registry.emplace<RenderLayer>(entity);
         render_layer_type = RENDER_LAYER_TYPE_GIZMO;
+
+        gizmo_y_axis_cone_entity = entity;
     }
     {
         auto entity = registry.create();

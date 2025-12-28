@@ -123,3 +123,27 @@ std::optional<RayCylinderHit> ray_cylinder_side_intersection(const Ray &ray, con
 
     return hit;
 }
+
+std::optional<float> ray_disk_intersection(const Ray &ray, const Disk &disk) {
+    // 计算射线与圆盘平面的交点
+    float denom = glm::dot(disk.normal, ray.direction);
+    if (std::abs(denom) < glm::epsilon<float>()) { // 射线与平面平行，无交点
+        return std::nullopt;
+    }
+
+    float t = glm::dot(disk.center - ray.origin, disk.normal) / denom;
+    if (t < 0.0f) { // 交点在射线起点的反方向
+        return std::nullopt;
+    }
+
+    // 计算交点
+    glm::vec3 hit_point = ray.origin + t * ray.direction;
+
+    // 检查交点是否在圆盘内（距离圆心的距离小于等于半径）
+    float distance_to_center = glm::length(hit_point - disk.center);
+    if (distance_to_center <= disk.radius) {
+        return t;
+    }
+
+    return std::nullopt;
+}

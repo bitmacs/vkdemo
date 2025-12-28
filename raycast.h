@@ -16,6 +16,13 @@ struct Ring {
     float radius;     // 圆环半径
 };
 
+// 圆盘结构 - 一个平面上的实心圆盘
+struct Disk {
+    glm::vec3 center; // 圆盘中心
+    glm::vec3 normal; // 圆盘法向量（已归一化，定义圆盘所在的平面）
+    float radius;     // 圆盘半径
+};
+
 // 圆柱曲面（Cylinder）结构 - 不包含顶部与底部的圆柱侧面
 struct Cylinder {
     glm::vec3 base_center; // 底部中心点
@@ -33,3 +40,6 @@ struct RayCylinderHit {
 std::optional<float> ray_ring_intersection_distance(const Ray& ray, const Ring& ring);
 
 std::optional<RayCylinderHit> ray_cylinder_side_intersection(const Ray& ray, const Cylinder& cylinder);
+
+// 检测射线与圆盘的交点，返回交点的 t 值（如果存在）
+std::optional<float> ray_disk_intersection(const Ray& ray, const Disk& disk);
