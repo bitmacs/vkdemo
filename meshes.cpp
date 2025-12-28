@@ -146,6 +146,45 @@ MeshData generate_cone_mesh_data(float radius, float height, uint32_t segments) 
     return mesh;
 }
 
+MeshData generate_cube_mesh_data(float size) {
+    MeshData mesh;
+
+    float half_size = size * 0.5f;
+
+    // 定义立方体的8个顶点
+    mesh.vertices = {
+        // 前面（+Z）
+        {glm::vec3(-half_size, -half_size,  half_size)}, // 0
+        {glm::vec3( half_size, -half_size,  half_size)}, // 1
+        {glm::vec3( half_size,  half_size,  half_size)}, // 2
+        {glm::vec3(-half_size,  half_size,  half_size)}, // 3
+        // 后面（-Z）
+        {glm::vec3(-half_size, -half_size, -half_size)}, // 4
+        {glm::vec3( half_size, -half_size, -half_size)}, // 5
+        {glm::vec3( half_size,  half_size, -half_size)}, // 6
+        {glm::vec3(-half_size,  half_size, -half_size)}, // 7
+    };
+
+    // 定义6个面的索引（每个面2个三角形）
+    mesh.indices = {
+        // 前面
+        0, 1, 2,  2, 3, 0,
+        // 后面
+        5, 4, 7,  7, 6, 5,
+        // 上面
+        3, 2, 6,  6, 7, 3,
+        // 下面
+        4, 5, 1,  1, 0, 4,
+        // 右面
+        1, 5, 6,  6, 2, 1,
+        // 左面
+        4, 0, 3,  3, 7, 4,
+    };
+
+    mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    return mesh;
+}
+
 bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry,
                                       MeshBuffersHandle mesh_buffers_handle) {
     std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);

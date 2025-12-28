@@ -147,3 +147,37 @@ std::optional<float> ray_disk_intersection(const Ray &ray, const Disk &disk) {
 
     return std::nullopt;
 }
+
+// 检测射线与 AABB 的交点（使用 slab 方法）
+std::optional<float> ray_aabb_intersection(const Ray &ray, const AABB &aabb) {
+    glm::vec3 inv_dir = 1.0f / ray.direction;
+
+    float t1 = (aabb.min.x - ray.origin.x) * inv_dir.x;
+    float t2 = (aabb.max.x - ray.origin.x) * inv_dir.x;
+    float t3 = (aabb.min.y - ray.origin.y) * inv_dir.y;
+    float t4 = (aabb.max.y - ray.origin.y) * inv_dir.y;
+    float t5 = (aabb.min.z - ray.origin.z) * inv_dir.z;
+    float t6 = (aabb.max.z - ray.origin.z) * inv_dir.z;
+
+    float tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
+    float tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
+
+    // 如果 tmax < 0，射线在 AABB 后面
+    if (tmax < 0.0f) {
+        return std::nullopt;
+    }
+
+    // 如果 tmin > tmax，没有交点
+    if (tmin > tmax) {
+        return std::nullopt;
+    }
+
+    // 返回最近的交点（如果 tmin < 0，说明射线起点在 AABB 内，返回 tmax）
+    float t = (tmin < 0.0f) ? tmax : tmin;
+
+    if (t >= 0.0f) {
+        return t;
+    }
+
+    return std::nullopt;
+}

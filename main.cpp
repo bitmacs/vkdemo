@@ -38,6 +38,10 @@ entt::registry registry;
 entt::entity gizmo_y_ring_entity = entt::null;
 entt::entity gizmo_y_axis_entity = entt::null;
 entt::entity gizmo_y_axis_cone_entity = entt::null;
+entt::entity gizmo_x_axis_entity = entt::null;
+entt::entity gizmo_x_axis_cube_entity = entt::null;
+
+glm::vec3 gizmo_hover_color = glm::vec3(1.0f, 0.65f, 0.0f); // 鲜艳的橘黄色
 
 static void glfw_error_callback(int error, const char *description) {
     assert(false);
@@ -274,6 +278,31 @@ static bool is_gizmo_y_axis_hovered(const glm::vec3 &origin, const glm::vec3 &di
     return false;
 }
 
+static bool is_gizmo_x_axis_hovered(const glm::vec3 &origin, const glm::vec3 &dir, const glm::mat4 &gizmo_model) {
+    float cube_half_size = 0.05f; // 立方体半边长
+    float axis_length = 1.2f;
+
+    // 将射线转换到 gizmo 的局部坐标系
+    glm::mat4 inv_model = glm::inverse(gizmo_model);
+
+    // 将射线起点转换到局部坐标系（作为点，w=1）
+    glm::vec4 local_origin_homogeneous = inv_model * glm::vec4(origin, 1.0f);
+    glm::vec3 local_ray_origin = glm::vec3(local_origin_homogeneous);
+
+    // 将射线方向转换到局部坐标系（作为向量，w=0，不受平移影响）
+    glm::vec4 local_dir_homogeneous = inv_model * glm::vec4(dir, 0.0f);
+    glm::vec3 local_ray_dir = glm::normalize(glm::vec3(local_dir_homogeneous));
+
+    // 在局部坐标系中，AABB 的定义不变
+    AABB aabb;
+    aabb.min = glm::vec3(-cube_half_size, -cube_half_size, -cube_half_size); // 起点处的立方体范围
+    aabb.max = glm::vec3(axis_length + cube_half_size, cube_half_size, cube_half_size); // 终点处的立方体范围
+
+    // 在局部坐标系中进行 AABB 检测
+    std::optional<float> hit_t = ray_aabb_intersection(Ray{local_ray_origin, local_ray_dir}, aabb);
+    return hit_t.has_value();
+}
+
 static glm::mat4 compute_transform_matrix(const Transform &transform) {
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), transform.position);
     glm::mat4 rotation = glm::mat4_cast(transform.orientation);
@@ -357,6 +386,7 @@ int main() {
     entt::entity hovered_ui_entity = entt::null;
     bool is_y_ring_hovered = false;
     bool is_y_axis_hovered = false;
+    bool is_x_axis_hovered = false;
 
     register_event(&events, EVENT_CODE_MOUSE_MOVE, [&](const EventData &event_data) -> bool {
         float x_pos = event_data.f32[0];
@@ -396,35 +426,86 @@ int main() {
                 registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
                 is_y_axis_hovered = false;
             }
+            if (is_x_axis_hovered) {
+                registry.get<Material>(gizmo_x_axis_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                registry.get<Material>(gizmo_x_axis_cube_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                is_x_axis_hovered = false;
+            }
             return true;
         }
         // 检查 gizmo 层元素
         {
             auto [origin, dir] = compute_ray_from_screen(camera, x_pos, y_pos, width, height);
 
-            // 先检查 y axis（优先级更高，因为它是更细的元素）
+            // 按优先级顺序检查，一旦检测到悬浮就立即返回
+            // 检查 y axis（用于移动）
             if (is_gizmo_y_axis_hovered(origin, dir)) {
-                registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
-                registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
-                is_y_axis_hovered = true;
-                // 如果之前 y ring 是悬浮状态，需要重置
+                // 重置其他可能悬浮的元素
+                if (is_x_axis_hovered) {
+                    registry.get<Material>(gizmo_x_axis_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                    registry.get<Material>(gizmo_x_axis_cube_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                    is_x_axis_hovered = false;
+                }
                 if (is_y_ring_hovered) {
                     registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
                     is_y_ring_hovered = false;
                 }
-                return true; // gizmo 处理了该事件
+                // 设置当前悬浮的元素
+                registry.get<Material>(gizmo_y_axis_entity).color = gizmo_hover_color;
+                registry.get<Material>(gizmo_y_axis_cone_entity).color = gizmo_hover_color;
+                is_y_axis_hovered = true;
+                return true; // gizmo 处理了该事件，立即退出
             }
+
+            // 检查 x axis（用于缩放）
+            glm::mat4 gizmo_model = glm::mat4(1.0f);
+            if (is_gizmo_x_axis_hovered(origin, dir, gizmo_model)) {
+                // 重置其他可能悬浮的元素
+                if (is_y_axis_hovered) {
+                    registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                    registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                    is_y_axis_hovered = false;
+                }
+                if (is_y_ring_hovered) {
+                    registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
+                    is_y_ring_hovered = false;
+                }
+                // 设置当前悬浮的元素
+                registry.get<Material>(gizmo_x_axis_entity).color = gizmo_hover_color;
+                registry.get<Material>(gizmo_x_axis_cube_entity).color = gizmo_hover_color;
+                is_x_axis_hovered = true;
+                return true; // gizmo 处理了该事件，立即退出
+            }
+
+            // 检查 y ring
+            if (is_gizmo_y_ring_hovered(origin, dir)) {
+                // 重置其他可能悬浮的元素
+                if (is_y_axis_hovered) {
+                    registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                    registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
+                    is_y_axis_hovered = false;
+                }
+                if (is_x_axis_hovered) {
+                    registry.get<Material>(gizmo_x_axis_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                    registry.get<Material>(gizmo_x_axis_cube_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                    is_x_axis_hovered = false;
+                }
+                // 设置当前悬浮的元素
+                registry.get<Material>(gizmo_y_ring_entity).color = gizmo_hover_color;
+                is_y_ring_hovered = true;
+                return true; // gizmo 处理了该事件，立即退出
+            }
+
+            // 如果没有任何 gizmo 元素悬浮，重置所有之前悬浮的元素
             if (is_y_axis_hovered) {
                 registry.get<Material>(gizmo_y_axis_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
                 registry.get<Material>(gizmo_y_axis_cone_entity).color = glm::vec3(0.0f, 1.0f, 0.0f);
                 is_y_axis_hovered = false;
             }
-
-            // 再检查 y ring
-            if (is_gizmo_y_ring_hovered(origin, dir)) {
-                registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(0.8f, 0.0f, 0.0f);
-                is_y_ring_hovered = true;
-                return true; // gizmo 处理了该事件
+            if (is_x_axis_hovered) {
+                registry.get<Material>(gizmo_x_axis_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                registry.get<Material>(gizmo_x_axis_cube_entity).color = glm::vec3(1.0f, 0.0f, 0.0f);
+                is_x_axis_hovered = false;
             }
             if (is_y_ring_hovered) {
                 registry.get<Material>(gizmo_y_ring_entity).color = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -610,6 +691,52 @@ int main() {
         render_layer_type = RENDER_LAYER_TYPE_GIZMO;
 
         gizmo_y_axis_cone_entity = entity;
+    }
+    // X轴：从原点到右方的线段
+    {
+        auto entity = registry.create();
+
+        auto &[mesh_buffers_handle] = registry.emplace<Mesh>(entity);
+        MeshData mesh_data = generate_line_mesh_data(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.2f, 0.0f, 0.0f));
+        mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        auto &[position, orientation, scale] = registry.emplace<Transform>(entity);
+        position = glm::vec3(0.0f, 0.0f, 0.0f);
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 0.0f, 0.0f); // 红色表示X轴
+        material.depth_test_enabled = false;
+
+        auto &[render_layer_type] = registry.emplace<RenderLayer>(entity);
+        render_layer_type = RENDER_LAYER_TYPE_GIZMO;
+
+        gizmo_x_axis_entity = entity;
+    }
+    // X轴方块：在X轴末端添加立方体（用于scale gizmo）
+    {
+        auto entity = registry.create();
+
+        auto &[mesh_buffers_handle] = registry.emplace<Mesh>(entity);
+        float cube_size = 0.1f; // 立方体大小
+        MeshData mesh_data = generate_cube_mesh_data(cube_size);
+        mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        auto &[position, orientation, scale] = registry.emplace<Transform>(entity);
+        // 将立方体放置在 x axis 的末端 (1.2, 0, 0)，立方体中心在末端
+        position = glm::vec3(1.2f, 0.0f, 0.0f);
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // 不需要旋转
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(1.0f, 0.0f, 0.0f); // 红色，与X轴一致
+        material.depth_test_enabled = false;
+
+        auto &[render_layer_type] = registry.emplace<RenderLayer>(entity);
+        render_layer_type = RENDER_LAYER_TYPE_GIZMO;
+
+        gizmo_x_axis_cube_entity = entity;
     }
     {
         auto entity = registry.create();

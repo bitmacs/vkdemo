@@ -31,6 +31,12 @@ struct Cylinder {
     float height;          // 圆柱高度
 };
 
+// 轴对齐包围盒（AABB）结构
+struct AABB {
+    glm::vec3 min; // 最小点（左下前）
+    glm::vec3 max; // 最大点（右后上）
+};
+
 struct RayCylinderHit {
     float t;             // 射线参数 t，使得 hit_point = ray.origin + t * ray.direction
     glm::vec3 hit_point; // 碰撞点
@@ -43,3 +49,6 @@ std::optional<RayCylinderHit> ray_cylinder_side_intersection(const Ray& ray, con
 
 // 检测射线与圆盘的交点，返回交点的 t 值（如果存在）
 std::optional<float> ray_disk_intersection(const Ray& ray, const Disk& disk);
+
+// 检测射线与 AABB 的交点，返回交点的 t 值（如果存在）
+std::optional<float> ray_aabb_intersection(const Ray& ray, const AABB& aabb);
