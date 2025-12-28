@@ -25,6 +25,8 @@ MeshData generate_ring_mesh_data(float radius, uint32_t segments);
 
 MeshData generate_quad_mesh_data(float width, float height);
 
+MeshData generate_cone_mesh_data(float radius, float height, uint32_t segments);
+
 #define MAX_MESH_BUFFERS 10
 
 struct MeshBuffers {

@@ -105,6 +105,47 @@ MeshData generate_quad_mesh_data(float width, float height) {
     return mesh;
 }
 
+MeshData generate_cone_mesh_data(float radius, float height, uint32_t segments) {
+    MeshData mesh;
+
+    // 圆锥顶点（顶部，指向 +Y 方向）
+    mesh.vertices.push_back({glm::vec3(0.0f, height, 0.0f)});
+    uint32_t top_vertex_index = 0;
+
+    // 底部圆形的顶点
+    float angle_step = 2.0f * glm::pi<float>() / static_cast<float>(segments);
+    uint32_t base_start_index = 1;
+
+    for (uint32_t i = 0; i <= segments; ++i) {
+        float angle = static_cast<float>(i) * angle_step;
+        float x = radius * std::cos(angle);
+        float z = radius * std::sin(angle);
+        mesh.vertices.push_back({glm::vec3(x, 0.0f, z)});
+    }
+
+    // 生成侧面三角形（从顶部到底部边缘）
+    for (uint32_t i = 0; i < segments; ++i) {
+        mesh.indices.push_back(top_vertex_index);
+        mesh.indices.push_back(base_start_index + i);
+        mesh.indices.push_back(base_start_index + i + 1);
+    }
+
+    // 生成底部圆形（封闭底部）
+    // 底部中心点
+    uint32_t bottom_center_index = static_cast<uint32_t>(mesh.vertices.size());
+    mesh.vertices.push_back({glm::vec3(0.0f, 0.0f, 0.0f)});
+
+    // 底部三角形
+    for (uint32_t i = 0; i < segments; ++i) {
+        mesh.indices.push_back(bottom_center_index);
+        mesh.indices.push_back(base_start_index + i + 1);
+        mesh.indices.push_back(base_start_index + i);
+    }
+
+    mesh.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    return mesh;
+}
+
 bool increment_mesh_buffers_ref_count(MeshBuffersRegistry *mesh_buffers_registry,
                                       MeshBuffersHandle mesh_buffers_handle) {
     std::lock_guard<std::mutex> lock(mesh_buffers_registry->mutex);

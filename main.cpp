@@ -498,8 +498,31 @@ int main() {
         material.color = glm::vec3(0.0f, 1.0f, 0.0f); // 绿色表示Y轴
         material.depth_test_enabled = false;
 
-        RenderLayer &render_layer = registry.emplace<RenderLayer>(entity);
-        render_layer.render_layer_type = RENDER_LAYER_TYPE_GIZMO;
+        auto &[render_layer_type] = registry.emplace<RenderLayer>(entity);
+        render_layer_type = RENDER_LAYER_TYPE_GIZMO;
+    }
+    // Y轴箭头：在Y轴末端添加圆锥体箭头
+    {
+        auto entity = registry.create();
+
+        auto &[mesh_buffers_handle] = registry.emplace<Mesh>(entity);
+        float arrow_radius = 0.05f;
+        float arrow_height = 0.15f;
+        uint32_t arrow_segments = 16;
+        MeshData mesh_data = generate_cone_mesh_data(arrow_radius, arrow_height, arrow_segments);
+        mesh_buffers_handle = request_mesh_buffers(&mesh_buffers_registry, &task_system, &vk_context, std::move(mesh_data));
+
+        auto &[position, orientation, scale] = registry.emplace<Transform>(entity);
+        position = glm::vec3(0.0f, 1.2f, 0.0f);
+        orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // 已经是 +Y 方向，不需要旋转
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+
+        auto &material = registry.emplace<Material>(entity);
+        material.color = glm::vec3(0.0f, 1.0f, 0.0f); // 绿色，与Y轴一致
+        material.depth_test_enabled = false;
+
+        auto &[render_layer_type] = registry.emplace<RenderLayer>(entity);
+        render_layer_type = RENDER_LAYER_TYPE_GIZMO;
     }
     {
         auto entity = registry.create();
