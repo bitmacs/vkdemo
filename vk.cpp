@@ -334,7 +334,7 @@ static void create_render_pass(VkContext *context) {
     depth_attachment.format = context->depth_image_format;
     depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // store for picking pass
     depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -364,6 +364,67 @@ static void create_render_pass(VkContext *context) {
     render_pass_create_info.pSubpasses = &subpass;
     VkResult result = vkCreateRenderPass(context->device, &render_pass_create_info, nullptr, &context->render_pass);
     assert(result == VK_SUCCESS);
+}
+
+static void create_picking_render_pass(VkContext *context) {
+    // picking pass 应该在 scene pass 之后执行，复用 scene pass 的深度缓冲区
+    VkAttachmentDescription depth_attachment = {};
+    depth_attachment.format = context->depth_image_format;
+    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentDescription attachments[1] = {depth_attachment};
+
+    VkAttachmentReference depth_attachment_ref = {};
+    depth_attachment_ref.attachment = 0;
+    depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass = {};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+    VkRenderPassCreateInfo render_pass_create_info = {};
+    render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    render_pass_create_info.attachmentCount = std::size(attachments);
+    render_pass_create_info.pAttachments = attachments;
+    render_pass_create_info.subpassCount = 1;
+    render_pass_create_info.pSubpasses = &subpass;
+    VkResult result = vkCreateRenderPass(context->device, &render_pass_create_info, nullptr, &context->picking_render_pass);
+    assert(result == VK_SUCCESS);
+}
+
+static void create_picking_resources(VkContext *context, uint32_t width, uint32_t height) {
+    VkDeviceSize buffer_size = sizeof(uint32_t);
+    create_buffer(context, buffer_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &context->picking_ssbo);
+
+    VkMemoryRequirements memory_requirements;
+    vkGetBufferMemoryRequirements(context->device, context->picking_ssbo, &memory_requirements);
+    uint32_t memory_type_index = UINT32_MAX;
+    // 支持 GPU 写入和 CPU 读取
+    get_memory_type_index(context, memory_requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &memory_type_index);
+    allocate_memory(context, memory_requirements.size, memory_type_index, &context->picking_ssbo_memory);
+    vkBindBufferMemory(context->device, context->picking_ssbo, context->picking_ssbo_memory, 0);
+
+    {
+        VkImageView attachments[1] = {context->depth_image_views[0]}; // 复用第一个 depth image
+
+        VkFramebufferCreateInfo framebuffer_create_info = {};
+        framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebuffer_create_info.renderPass = context->picking_render_pass;
+        framebuffer_create_info.attachmentCount = std::size(attachments);
+        framebuffer_create_info.pAttachments = attachments;
+        framebuffer_create_info.width = width;
+        framebuffer_create_info.height = height;
+        framebuffer_create_info.layers = 1;
+
+        VkResult result = vkCreateFramebuffer(context->device, &framebuffer_create_info, nullptr, &context->picking_framebuffer);
+        assert(result == VK_SUCCESS);
+    }
 }
 
 static void create_offscreen_resources(VkContext *context, uint32_t width, uint32_t height, uint32_t frame_count) {
@@ -652,6 +713,8 @@ void init_vk(VkContext *context, GLFWwindow *window, uint32_t width, uint32_t he
     context->depth_image_format = VK_FORMAT_D16_UNORM;
     create_render_pass(context);
     create_offscreen_resources(context, width, height, max_frames_in_flight);
+    create_picking_render_pass(context);
+    create_picking_resources(context, width, height);
     create_command_pool(context);
     create_descriptor_set_layout(context);
     create_pipeline_layout(context, sizeof(InstanceConstants));
@@ -675,7 +738,12 @@ void cleanup_vk(VkContext *context) {
     vkDestroyPipelineLayout(context->device, context->pipeline_layout, nullptr);
     vkDestroyDescriptorSetLayout(context->device, context->descriptor_set_layout, nullptr);
     vkDestroyCommandPool(context->device, context->command_pool, nullptr);
-    // 清理离屏资源
+    // clean up picking resources
+    vkDestroyBuffer(context->device, context->picking_ssbo, nullptr);
+    vkFreeMemory(context->device, context->picking_ssbo_memory, nullptr);
+    vkDestroyFramebuffer(context->device, context->picking_framebuffer, nullptr);
+    vkDestroyRenderPass(context->device, context->picking_render_pass, nullptr);
+    // clean up offscreen resources
     for (size_t i = 0; i < context->framebuffers.size(); ++i) {
         vkDestroyFramebuffer(context->device, context->framebuffers[i], nullptr);
     }

@@ -76,6 +76,10 @@ struct VkContext {
     std::vector<VkImageView> color_image_views;
     std::vector<VkFramebuffer> framebuffers;
 
+    VkRenderPass picking_render_pass;
+    VkFramebuffer picking_framebuffer;
+    VkBuffer picking_ssbo; // ssbo 用于存储 picking 结果（4字节）
+    VkDeviceMemory picking_ssbo_memory;
     VkDescriptorSetLayout descriptor_set_layout;
     VkPipelineLayout pipeline_layout;
     std::unordered_map<PipelineKey, VkPipeline, PipelineKeyHash> pipelines;
