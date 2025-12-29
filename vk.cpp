@@ -853,3 +853,20 @@ void apply_pipeline_dynamic_states(VkContext *context, VkCommandBuffer command_b
         vkCmdSetCullMode(command_buffer, cull_mode);
     }
 }
+
+void blit_image(VkCommandBuffer command_buffer, VkImage src_image, VkImageLayout src_image_layout, VkImage dst_image, VkImageLayout dst_image_layout, uint32_t width, uint32_t height) {
+    VkImageBlit blit_region = {};
+    blit_region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit_region.srcSubresource.mipLevel = 0;
+    blit_region.srcSubresource.baseArrayLayer = 0;
+    blit_region.srcSubresource.layerCount = 1;
+    blit_region.srcOffsets[0] = {0, 0, 0};
+    blit_region.srcOffsets[1] = {(int32_t) width, (int32_t) height, 1};
+    blit_region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit_region.dstSubresource.mipLevel = 0;
+    blit_region.dstSubresource.baseArrayLayer = 0;
+    blit_region.dstSubresource.layerCount = 1;
+    blit_region.dstOffsets[0] = {0, 0, 0};
+    blit_region.dstOffsets[1] = {(int32_t) width, (int32_t) height, 1};
+    vkCmdBlitImage(command_buffer, src_image, src_image_layout, dst_image, dst_image_layout, 1, &blit_region, VK_FILTER_LINEAR);
+}

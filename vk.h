@@ -118,3 +118,5 @@ VkPipeline get_pipeline(VkContext *context, PipelineKey pipeline_key);
 
 void apply_pipeline_dynamic_states(VkContext *context, VkCommandBuffer command_buffer, PipelineKey pipeline_key,
                                    VkCullModeFlags cull_mode);
+
+void blit_image(VkCommandBuffer command_buffer, VkImage src_image, VkImageLayout src_image_layout, VkImage dst_image, VkImageLayout dst_image_layout, uint32_t width, uint32_t height);
